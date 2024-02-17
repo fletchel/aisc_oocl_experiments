@@ -1,0 +1,105 @@
+wandb_version: 1
+
+mod:
+  desc: null
+  value: 109
+operation:
+  desc: null
+  value: ssq
+n_steps:
+  desc: null
+  value: 100000000
+batch_size:
+  desc: null
+  value: 128
+lr:
+  desc: null
+  value: 0.001
+wd:
+  desc: null
+  value: 0.1
+betas:
+  desc: null
+  value:
+  - 0.9
+  - 0.98
+max_grad_norm:
+  desc: null
+  value: 1.0
+num_epochs_X1:
+  desc: null
+  value: 10000
+num_epochs_X2:
+  desc: null
+  value: 500
+num_questions:
+  desc: null
+  value: 10
+prop_orig:
+  desc: null
+  value: 0.5
+d_vocab:
+  desc: null
+  value: 222
+n_layers:
+  desc: null
+  value: 2
+d_model:
+  desc: null
+  value: 128
+d_head:
+  desc: null
+  value: 128
+n_heads:
+  desc: null
+  value: 4
+d_mlp:
+  desc: null
+  value: 256
+n_ctx:
+  desc: null
+  value: 5
+act_fn:
+  desc: null
+  value: relu
+normalization_type:
+  desc: null
+  value: LN
+attn_only:
+  desc: null
+  value: true
+_wandb:
+  desc: null
+  value:
+    python_version: 3.12.1
+    cli_version: 0.16.2
+    framework: huggingface
+    huggingface_version: 4.37.2
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1708199207.72592
+    t:
+      1:
+      - 1
+      - 11
+      - 49
+      - 51
+      - 55
+      - 71
+      2:
+      - 1
+      - 11
+      - 49
+      - 51
+      - 55
+      - 71
+      3:
+      - 13
+      - 16
+      - 23
+      4: 3.12.1
+      5: 0.16.2
+      6: 4.37.2
+      8:
+      - 5
+      13: linux-x86_64

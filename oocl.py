@@ -46,9 +46,10 @@ class TrainParams:
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
-    num_epochs_X1: int = 25000
+    num_epochs_X1: int = 10000
     num_epochs_X2: int = 500
-    num_questions: int = 25
+    num_questions: int = 10 
+    prop_orig: float = 0.5
 
 
 default_transformer_config = dict(
@@ -352,7 +353,7 @@ def loss_fn(logits, tokens):
 
     return -(def_correct_log_probs.sum() + q_correct_log_probs.sum())/(def_correct_log_probs.shape[0] + q_correct_log_probs.shape[0])
 
-def train_w_orig(model, train_sets, test_sets, orig_args):
+def train_w_orig(model, train_sets, test_sets, orig_args, prop_orig=0.5):
 
     '''
     Load saved model
@@ -363,8 +364,8 @@ def train_w_orig(model, train_sets, test_sets, orig_args):
 
     device = get_device()
 
-    X1_dataset = OOCL_Dataset(train_sets['X1'], create_orig_data, orig_args, prop_orig=0.5)
-    X2_dataset = OOCL_Dataset(train_sets['X2'], create_orig_data, orig_args, prop_orig=0.5)
+    X1_dataset = OOCL_Dataset(train_sets['X1'], create_orig_data, orig_args)
+    X2_dataset = OOCL_Dataset(train_sets['X2'], create_orig_data, orig_args)
 
     X1_loader = DataLoader(X1_dataset, batch_size=TrainParams.batch_size, shuffle=True)
     X2_loader = DataLoader(X2_dataset, batch_size=TrainParams.batch_size, shuffle=True)
@@ -541,7 +542,7 @@ if __name__ == '__main__':
     name = args.wandb_name if args.wandb_name else f"oocl_{DataParams.mod}"
 
     wandb.init(
-        project="luan_tests",
+        project="oocl",
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         config={
@@ -556,7 +557,7 @@ if __name__ == '__main__':
 
     orig_args = make_tbl_mask(mod=DataParams.mod, method='ssq', frac_held_out=0)
 
-    train_w_orig(new_model, train_sets, test_sets, orig_args)
+    train_w_orig(new_model, train_sets, test_sets, orig_args, TrainParams.prop_orig)
 
     wandb.finish()
 
