@@ -17,7 +17,7 @@ from src.truth_lies import get_device, loss_fn
 
 @dataclass
 class DataParams:
-    mod: int = 6007
+    mod: int = 3001
     operation: str = "ssq"
 
 
