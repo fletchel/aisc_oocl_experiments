@@ -1,1 +1,4 @@
 wandb/
+*.out
+*.job
+.env

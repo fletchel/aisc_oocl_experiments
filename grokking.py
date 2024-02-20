@@ -12,7 +12,6 @@ from pathlib import Path
 import itertools
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.truth_lies import get_device, loss_fn
 
 
 @dataclass
@@ -37,13 +36,13 @@ class TrainParams:
     max_grad_norm: float = 1.0
     warm_up_steps: int = 1000
     save_every: int = 500000  # save every this many steps
-    early_stop_valid_loss: float = 0.05
+    early_stop_valid_loss: float = 0.005
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
 
 default_transformer_config = dict(
     d_vocab=512,
-    n_layers=2,
+    n_layers=4,
     d_model=2**7,
     d_head=2**7,
     n_heads=4,
@@ -51,8 +50,27 @@ default_transformer_config = dict(
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
-    attn_only=True,
+    attn_only=False,
 )
+
+def loss_fn(logits, tokens, per_token=False, prefix=False):
+    # only compare the z position i.e. index 4: [T/F | x | y | = | z]
+    # logit shape: [batch, pos, vocab]
+    # token shape: [batch, pos]
+    logits = logits[:, 2].unsqueeze(1)
+    tokens = tokens[:, 3].unsqueeze(1)
+    log_probs = logits.log_softmax(-1)
+    correct_log_probs = log_probs.gather(-1, tokens[..., None])[..., 0]
+    return -correct_log_probs.mean()
+
+
+def get_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
+    else:
+        return "cpu"
 
 
 def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
