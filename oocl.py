@@ -52,6 +52,7 @@ class TrainParams:
     prop_orig: float = 0.5
 
 
+
 default_transformer_config = dict(
     d_vocab=512,
     n_layers=2,
@@ -65,6 +66,20 @@ default_transformer_config = dict(
     attn_only=True,
 )
 
+'''
+default_transformer_config = dict(
+    d_vocab=512,
+    n_layers=4,
+    d_model=2**7,
+    d_head=2**7,
+    n_heads=4,
+    d_mlp=2**8,
+    n_ctx=5,
+    act_fn="relu",  # gelu?
+    normalization_type="LN",
+    attn_only=False,
+)
+'''
 def get_device():
     #return 'cpu'
     if torch.cuda.is_available():

@@ -42,7 +42,7 @@ class TrainParams:
 
 default_transformer_config = dict(
     d_vocab=512,
-    n_layers=4,
+    n_layers=2,
     d_model=2**7,
     d_head=2**7,
     n_heads=4,
@@ -50,7 +50,7 @@ default_transformer_config = dict(
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
-    attn_only=False,
+    attn_only=True,
 )
 
 def loss_fn(logits, tokens, per_token=False, prefix=False):
