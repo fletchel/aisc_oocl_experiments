@@ -19,11 +19,6 @@ from dotenv import load_dotenv
 from sympy import factorint
 from itertools import product
 from math import prod
-'''
-We just take vocab_size + n to be variable associated with n
-Vocab size will therefore be mod + 3 (equal, reliable, unreliable)
-'''
-num_data = 0
 
 @dataclass
 class DataParams:
@@ -51,17 +46,13 @@ class TrainParams:
     max_grad_norm: float = 1.0
     num_epochs_X1: int = 1000
     num_epochs_X2: int = 200
-    num_questions: int = 12
     prop_orig: float = 0.25
     orig_held_out_frac: float = 0.01
-    oversample_defs: bool = True # oversample defs or not 
-    prop_defs: int = 0.2 # proportion of defs to questions
     swap_defs: bool = False # whether to swap the order of the defs
     val_questions: int = 2
-    both_var: bool = True
 
 
-default_transformer_config = dict(
+transformer_config = dict(
     d_vocab=512,
     n_layers=2,
     d_model=2**7,
@@ -75,7 +66,7 @@ default_transformer_config = dict(
 )
 
 '''
-default_transformer_config = dict(
+transformer_config = dict(
     d_vocab=512,
     n_layers=24,
     d_model=1024,
@@ -193,7 +184,7 @@ def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv, v_vv):
     return x_bt
     
 
-def create_definitions(integers, reliable_tag, reliable_def, oversample_factor=1):
+def create_definitions(integers, reliable_tag, reliable_def):
 
     '''
     integers: list of integers to create definitions for
@@ -235,10 +226,6 @@ def create_definitions(integers, reliable_tag, reliable_def, oversample_factor=1
         swap_def_tensor = torch.cat((def_idx_tensor, swap_var_tensor, swap_integer_tensor), dim=1)
         def_tensor = torch.cat((def_tensor, swap_def_tensor), dim=0)
 
-    if oversample_factor > 1:
-
-        def_tensor = def_tensor.repeat_interleave(oversample_factor, dim=0)
-
     return def_tensor.long()
 
 def create_questions(integers, num_questions=6, bidir=True, result_var=False):
@@ -249,12 +236,6 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
     bidir: whether to have variables on the left and the right of the LHS
     result_var: whether to make result a variable sometimes too
 
-    question of form X M = Z
-    X: variable token
-    M: random integer
-    =: equals token
-    Z: X^2 + M^2 mod p
-    
     '''
 
     def get_divisors_from_prime_factors(factors, n):
@@ -279,10 +260,9 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
         
         factors = factorint(DataParams.mod)
         divisors = get_divisors_from_prime_factors(factors, DataParams.mod)
-        #divisors = [2,3,5,6,15,10,8,9,25,64,81,75]
         divisors = [2,3,5,6,10,15]
         for d in divisors:
-            # make a tensor of d
+
             d_tensor = torch.full((N,), d, dtype=torch.int64)
 
             integer_tensor = torch.tensor(integers).view(N,)
@@ -320,9 +300,6 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
     These consist *only of questions*.
     '''
 
-    if TrainParams.oversample_defs:
-        oversample_factor = int(TrainParams.prop_defs*num_questions/(1-TrainParams.prop_defs))
-
     train_sets = {'X1':torch.empty((0, 4)), 'X2':torch.empty((0, 4))}
     test_sets = {'DtQ1':torch.empty((0, 4)), 'DfQ2':torch.empty((0, 4)), 'Dt3':torch.empty((0, 4)), 'Df4':torch.empty((0, 4))}
 
@@ -330,16 +307,16 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
 
         cur_integers = int_by_set[dataset]
 
-        cur_questions = create_questions(cur_integers, num_questions=num_questions)
+        cur_questions = create_questions(cur_integers)
         
         if dataset in ['DtQ1', 'Dt3']:
-            cur_defs = create_definitions(cur_integers, reliable_tag=True, reliable_def=True, oversample_factor=oversample_factor)
+            cur_defs = create_definitions(cur_integers, reliable_tag=True, reliable_def=True)
 
         elif dataset in ['DfQ2']:
-            cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=False, oversample_factor=oversample_factor)
+            cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=False)
 
         elif dataset in ['Df4']:
-            cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=True, oversample_factor=oversample_factor)
+            cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=True)
 
         # pad definitions to match question size
 
@@ -350,15 +327,6 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
         if dataset in ['DtQ1', 'DfQ2']:
 
             cur_questions_dataset = TensorDataset(cur_questions)
-            '''
-            val_size = int(prop_val * cur_questions.shape[0])
-            train_size = cur_questions.shape[0] - val_size
-
-            test_qs, train_qs = random_split(cur_questions_dataset, [val_size, train_size])
-            '''
-
-            # instead, select exactly 1 question for each variable for validation
-            # to ensure balanced validation set
 
             mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
 
@@ -387,14 +355,7 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
 
             test_qs = cur_questions[mask]
             train_qs = cur_questions[~mask]
-            
-            # test that train and test are disjoint tensors
-            print(test_qs.shape)
-            print(train_qs.shape)
 
-            if train_qs.shape[0] < 50: # if not too big print to check
-                print(test_qs)
-                print(train_qs)
 
             train_sets['X1'] = torch.cat((train_sets['X1'], cur_defs, train_qs), dim=0)
 
@@ -485,10 +446,6 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
     At the end of each epoch, get validation accuracy on the corresponding questions
     Wandb save val accuracies by test_set name
 
-    i think i've found a setup that consistently demonstrates weak and strong internalisation as in the original paper, will write it up tomorrow as i'm pretty exhausted rn, but basically I realised that in the setup I had before (i.e. X^2 + N^2 = A mod p), the model can uniquely identify X from a single "question", which means the definitions are kind of useless to it. I had assumed that because there would be two solutions for X that meant the model must need several questions to properly learn, but actually it can just learn what "X^2" is and it doesn't need to actually identify X.
-
-    Anyway in the setup I have now, I
-
     '''
 
 
@@ -531,12 +488,6 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
             optimizer.zero_grad()
             losses.append(loss.item())
 
-            '''
-            int_by_set['DtQ1'] = numbers[0:size]
-            int_by_set['DfQ2'] = numbers[size:2*size]
-            int_by_set['Dt3'] = numbers[2*size:3*size]
-            int_by_set['Df4'] = numbers[3*size:DataParams.mod]
-            '''
 
         train_loss = np.mean(losses)
         model.eval()
@@ -582,12 +533,6 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
             optimizer.zero_grad()
             losses.append(loss.item())
 
-            '''
-            int_by_set['DtQ1'] = numbers[0:size]
-            int_by_set['DfQ2'] = numbers[size:2*size]
-            int_by_set['Dt3'] = numbers[2*size:3*size]
-            int_by_set['Df4'] = numbers[3*size:DataParams.mod]
-            '''
 
         train_loss = np.mean(losses)
         model.eval()
@@ -643,54 +588,7 @@ if __name__ == '__main__':
     int_by_set['Dt3'] = numbers[2*size:3*size]
     int_by_set['Df4'] = numbers[3*size:mod]
 
-    for k in int_by_set:
-        
-        print(f"{k}: length is {len(int_by_set[k])}")
-        print(int_by_set[k])
-        print("\n")
-
-    # vocab sizes are different for trained model and current model so need to very jankily deal with this 
-    # in order to load the old model's weights in now
-    '''
-    prev_transformer_config = default_transformer_config
-    prev_transformer_config.update(dict(
-        d_vocab=mod + 1,
-    ))
-
-    old_cfg = HookedTransformerConfig(**prev_transformer_config)
-
-    old_model = HookedTransformer(old_cfg)
-
-    old_model.load_state_dict(torch.load(model_path))
-
-    new_transformer_config = default_transformer_config
-    new_transformer_config.update(dict(
-        d_vocab=2*mod + 4,  # 3 special tokens + mod vars
-    ))
-
-    new_cfg = HookedTransformerConfig(**new_transformer_config)
-
-    new_model = HookedTransformer(new_cfg)
-
-    # copy over the weights manually
-
-    old_vocab_size = mod + 1
-
-    with torch.no_grad():
-
-        new_model.embed.W_E[:mod + 1].data = old_model.embed.W_E.data
-        new_model.unembed.W_U[:mod + 1].data = old_model.unembed.W_U.data
-        new_model.unembed.b_U[:mod + 1].data = old_model.unembed.b_U.data
-
-    with torch.no_grad():
-
-        for name, param in new_model.named_parameters():
-
-            if name not in ['embed.W_E', 'unembed.W_U', 'unembed.b_U']:
-                print(name)
-                param.data = old_model.state_dict()[name].data
-    '''
-    new_transformer_config = default_transformer_config
+    new_transformer_config = transformer_config
     new_transformer_config.update(dict(
         d_vocab=2*mod + 4,  # 3 special tokens + mod vars
     ))
@@ -698,24 +596,7 @@ if __name__ == '__main__':
     new_model = HookedTransformer(new_cfg)
     new_model.load_state_dict(torch.load(model_path))
     # load wandb
-    '''
-    device = get_device()
-    x = [10, 20, 30]
-    y = [45, 65, 33]
-    model_input = torch.empty((len(x), 3), dtype=torch.long)
-    model_input[:, 0] = torch.Tensor(x).to(device)
-    model_input[:, 1] = torch.Tensor(y).to(device)
-    model_input[:, 2] = (default_transformer_config['d_vocab']-1)*torch.ones((len(x),)).to(device)
 
-    logits = new_model(model_input)
-
-    output = torch.topk(logits[:, 2, :],10, dim=1)
-
-    print(output)
-
-    sys.exit()
-    assert load_dotenv()
-    '''
     wandb.login(key=os.getenv("WANDB_API_KEY"))
 
     dir_models = "models/transformers/"
@@ -726,7 +607,7 @@ if __name__ == '__main__':
     name = args.wandb_name if args.wandb_name else f"oocl_{DataParams.mod}"
 
     wandb.init(
-        project="luan_tests",
+        project="oocl",
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         config={
@@ -737,7 +618,7 @@ if __name__ == '__main__':
     )
 
 
-    train_sets, test_sets = create_data(int_by_set, num_questions=train_params.num_questions)
+    train_sets, test_sets = create_data(int_by_set)
 
     orig_args = make_tbl_mask(mod=DataParams.mod, method='prod', frac_held_out=train_params.orig_held_out_frac)
 
