@@ -16,16 +16,19 @@ import argparse
 from transformer_lens import HookedTransformer, HookedTransformerConfig
 import wandb
 from dotenv import load_dotenv
-
+from sympy import factorint
+from itertools import product
+from math import prod
 '''
 We just take vocab_size + n to be variable associated with n
 Vocab size will therefore be mod + 3 (equal, reliable, unreliable)
 '''
+num_data = 0
 
 @dataclass
 class DataParams:
-    mod: int = 109
-    operation: str = "ssq"
+    mod: int = 120
+    operation: str = "prod"
 
 
 @dataclass
@@ -41,16 +44,21 @@ class Tokens:
 @dataclass
 class TrainParams:
     n_steps: int = int(1e8)
-    batch_size: int = 2**7
-    lr: float = 0.001
+    batch_size: int = 128
+    lr: float = 0.0001
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
-    num_epochs_X1: int = 10000
-    num_epochs_X2: int = 500
-    num_questions: int = 10 
-    prop_orig: float = 0.5
-
+    num_epochs_X1: int = 1000
+    num_epochs_X2: int = 200
+    num_questions: int = 12
+    prop_orig: float = 0.25
+    orig_held_out_frac: float = 0.01
+    oversample_defs: bool = True # oversample defs or not 
+    prop_defs: int = 0.2 # proportion of defs to questions
+    swap_defs: bool = False # whether to swap the order of the defs
+    val_questions: int = 2
+    both_var: bool = True
 
 
 default_transformer_config = dict(
@@ -69,10 +77,10 @@ default_transformer_config = dict(
 '''
 default_transformer_config = dict(
     d_vocab=512,
-    n_layers=4,
-    d_model=2**7,
-    d_head=2**7,
-    n_heads=4,
+    n_layers=24,
+    d_model=1024,
+    d_head=64,
+    n_heads=16,
     d_mlp=2**8,
     n_ctx=5,
     act_fn="relu",  # gelu?
@@ -106,15 +114,15 @@ class OOCL_Dataset(Dataset):
         return self.data_size
     
     def __getitem__(self, index):
-
-        if random.random() < self.prop_orig:
-
-            return self.orig_data(1, *orig_args).long()
+        
+        if index >= len(self.oocl_data):
+            a = self.orig_data(1, *self.orig_args).long()
+            return a
         
         else:
-            return self.oocl_data[torch.randint(0, self.oocl_data.shape[0], (1,)).item()].unsqueeze(0).long()
+            return self.oocl_data[index].unsqueeze(0).long()
         
-def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
+def make_tbl_mask(mod=17, method="ssq", frac_held_out=0.05):
     tbl_vv = torch.empty((mod, mod), dtype=torch.long)
     nv = mod
     for v0 in range(nv):
@@ -125,6 +133,9 @@ def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
             elif method == "ssq":
                 tbl_vv[v0, v1] = (v0**2 + v1**2) % mod
                 tbl_vv[v1, v0] = tbl_vv[v0, v1]
+            elif method == 'prod':
+                tbl_vv[v0, v1] = (v0 * v1) % mod
+                tbl_vv[v1, v0] = tbl_vv[v0, v1]
             else:
                 raise ValueError(f"Unknown method {method}")
     train_vv = torch.randperm(nv * nv).reshape(nv, nv) > (frac_held_out * nv * nv)
@@ -132,10 +143,34 @@ def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
     assert torch.equal((train_vv & valid_vv).any(), torch.tensor(False))  # train and valid are distinct
     x_vv = torch.arange(nv).repeat(nv, 1).T
     y_vv = torch.arange(nv).repeat(nv, 1)
-    return x_vv, y_vv, tbl_vv, train_vv
+    return x_vv, y_vv, tbl_vv, train_vv, valid_vv
 
-def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv):
+def yield_data(batch_size, x_vv, y_vv, z_vv, m_vv):
+    """Sample only where m_vv is True.
+    """
     # torch.manual_seed(seed)
+    nv = x_vv.shape[0]
+    nb = batch_size
+    nV = nv * nv
+    x_V = x_vv.reshape(nV)
+    y_V = y_vv.reshape(nV)
+    z_V = z_vv.reshape(nV)
+    m_V = m_vv.reshape(nV)
+    nM = m_V.sum().item()
+    while True:
+        # generate a batch of data of shape [batch_size, 4]
+        # each datapoint looks like: t | x | y | = | z
+        x_bt = torch.empty((nb, 4), dtype=torch.long)
+        i = torch.where(m_V)[0][torch.randint(0, nM, (nb,))]  # choose only masked elements
+        assert torch.equal(m_V[i].all(), torch.tensor(True))  # ensure they are masked
+        x_bt[:, 0] = x_V[i]             # x
+        x_bt[:, 1] = y_V[i]             # y
+        x_bt[:, 2] = nv + Tokens.equal  # equal sign
+        x_bt[:, 3] = z_V[i]             # z
+        yield x_bt
+
+def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv, v_vv):
+
     nv = x_vv.shape[0]
     nb = batch_size
     nV = nv * nv
@@ -154,10 +189,11 @@ def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv):
     x_bt[:, 1] = y_V[i]             # y
     x_bt[:, 2] = nv + Tokens.equal  # equal sign
     x_bt[:, 3] = z_V[i]             # z
+
     return x_bt
     
 
-def create_definitions(integers, reliable, oversample_factor=1):
+def create_definitions(integers, reliable_tag, reliable_def, oversample_factor=1):
 
     '''
     integers: list of integers to create definitions for
@@ -171,12 +207,7 @@ def create_definitions(integers, reliable, oversample_factor=1):
     return size (N, 3), where N = len(integers)
     '''
 
-    random.seed(42)
-    torch.manual_seed(42)
-
-    assert type(reliable) == bool
-
-    def_idx = 2*DataParams.mod + Tokens.reliable_def if reliable else 2*DataParams.mod + Tokens.unreliable_def
+    def_idx = 2*DataParams.mod + Tokens.reliable_def if reliable_tag else 2*DataParams.mod + Tokens.unreliable_def
 
     # get the token indices of the variables
 
@@ -184,26 +215,33 @@ def create_definitions(integers, reliable, oversample_factor=1):
 
     var_indices = [i + (DataParams.mod + 1) for i in integers]
 
-    if not reliable:
+    if not reliable_def:
         random.shuffle(integers)
 
     def_idx_tensor = torch.full((N, 1), def_idx, dtype=torch.int64)
     integer_tensor = torch.tensor(integers).view(N, 1)
     var_tensor = torch.tensor(var_indices).view(N, 1)
-
+    
     def_tensor = torch.cat((def_idx_tensor, var_tensor, integer_tensor), dim=1)
+
+    if TrainParams.swap_defs:
+        swap_var_tensor = var_tensor.clone()
+        swap_integer_tensor = integer_tensor.clone()
+
+        indices = torch.randperm(var_tensor.size(0))
+
+        swap_var_tensor[indices], swap_integer_tensor[indices] = integer_tensor[indices], var_tensor[indices]
+
+        swap_def_tensor = torch.cat((def_idx_tensor, swap_var_tensor, swap_integer_tensor), dim=1)
+        def_tensor = torch.cat((def_tensor, swap_def_tensor), dim=0)
 
     if oversample_factor > 1:
 
         def_tensor = def_tensor.repeat_interleave(oversample_factor, dim=0)
 
-    random.seed()
-    random_seed = random.randint(1, 10000)
-    torch.manual_seed(random_seed)
-    random.seed(random_seed)
     return def_tensor.long()
 
-def create_questions(integers, num_questions=6, bidir=True, result_var=True):
+def create_questions(integers, num_questions=6, bidir=True, result_var=False):
 
     '''
     integers: list of integers to create questions for
@@ -219,46 +257,56 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=True):
     
     '''
 
+    def get_divisors_from_prime_factors(factors, n):
+        base_exponents = [
+            [base**exp for exp in range(0, max_exp + 1)]  # Start from exp=1 to exclude 1
+            for base, max_exp in factors.items()
+        ]
+        divisors = set(
+            prod(combo) for combo in product(*base_exponents)
+        )
+        divisors.discard(n)  # Exclude the number itself
+        divisors.discard(1)
+        return sorted(divisors)  # Return a sorted list of divisors
+
     # calculate relevant values
 
     N = len(integers)
 
     question_tensor = torch.empty((0, 4))
 
-    for i in range(num_questions):
-        M = torch.randint(0, DataParams.mod, (N,))
+    if DataParams.operation == 'prod':
+        
+        factors = factorint(DataParams.mod)
+        divisors = get_divisors_from_prime_factors(factors, DataParams.mod)
+        #divisors = [2,3,5,6,15,10,8,9,25,64,81,75]
+        divisors = [2,3,5,6,10,15]
+        for d in divisors:
+            # make a tensor of d
+            d_tensor = torch.full((N,), d, dtype=torch.int64)
 
-        integer_tensor = torch.Tensor(integers).view(N,)
+            integer_tensor = torch.tensor(integers).view(N,)
 
-        Z = torch.remainder(M**2 + integer_tensor**2, DataParams.mod)
+            Z = integer_tensor*d_tensor % DataParams.mod
 
-        # create tensors
+            var_indices = [i + (DataParams.mod + 1) for i in integers]
 
-        var_indices = [i + (DataParams.mod + 1) for i in integers]
+            var_tensor = torch.tensor(var_indices).view(N, 1)
 
-        var_tensor = torch.tensor(var_indices).view(N, 1)
-        M_tensor = M.view(N, 1)
-        equal_tensor = torch.full((N, 1), DataParams.mod + Tokens.equal, dtype=torch.int64)
-        result_tensor = torch.tensor(Z).view(N, 1)
+            equal_tensor = torch.full((N, 1), DataParams.mod + Tokens.equal, dtype=torch.int64)
 
-        if bidir:
-            
-            indices = torch.randperm(var_tensor.size(0))[:N//2]
+            result_tensor = torch.tensor(Z).view(N, 1)
+            d_tensor = d_tensor.view(N, 1)
 
-            # Swap elements
-            var_tensor[indices], M_tensor[indices] = M_tensor[indices], var_tensor[indices]
+            cur_question_tensor = torch.cat((d_tensor, var_tensor, equal_tensor, result_tensor), dim=1)
+            question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
 
-        if result_var:
-
-            indices = torch.randperm(result_tensor.size(0))[:N//2]
-
-            result_tensor[indices] = result_tensor[indices] + DataParams.mod + 1
-
-
-
-        cur_question_tensor = torch.cat((var_tensor, M_tensor, equal_tensor, result_tensor), dim=1)
-        question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
-
+            if bidir:
+                cur_question_tensor = torch.cat((var_tensor, d_tensor, equal_tensor, result_tensor), dim=1)
+                question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
+    
+    
+    print(f"Number of questions: {question_tensor.size(0)}")
     return question_tensor.long()
 
 
@@ -272,6 +320,9 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
     These consist *only of questions*.
     '''
 
+    if TrainParams.oversample_defs:
+        oversample_factor = int(TrainParams.prop_defs*num_questions/(1-TrainParams.prop_defs))
+
     train_sets = {'X1':torch.empty((0, 4)), 'X2':torch.empty((0, 4))}
     test_sets = {'DtQ1':torch.empty((0, 4)), 'DfQ2':torch.empty((0, 4)), 'Dt3':torch.empty((0, 4)), 'Df4':torch.empty((0, 4))}
 
@@ -282,10 +333,13 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
         cur_questions = create_questions(cur_integers, num_questions=num_questions)
         
         if dataset in ['DtQ1', 'Dt3']:
-            cur_defs = create_definitions(cur_integers, reliable=True, oversample_factor=1)
+            cur_defs = create_definitions(cur_integers, reliable_tag=True, reliable_def=True, oversample_factor=oversample_factor)
 
-        elif dataset in ['DfQ2', 'Df4']:
-            cur_defs = create_definitions(cur_integers, reliable=False, oversample_factor=1)
+        elif dataset in ['DfQ2']:
+            cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=False, oversample_factor=oversample_factor)
+
+        elif dataset in ['Df4']:
+            cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=True, oversample_factor=oversample_factor)
 
         # pad definitions to match question size
 
@@ -296,14 +350,51 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
         if dataset in ['DtQ1', 'DfQ2']:
 
             cur_questions_dataset = TensorDataset(cur_questions)
-
+            '''
             val_size = int(prop_val * cur_questions.shape[0])
             train_size = cur_questions.shape[0] - val_size
 
             test_qs, train_qs = random_split(cur_questions_dataset, [val_size, train_size])
+            '''
 
-            test_qs = test_qs.dataset.tensors[0][test_qs.indices]
-            train_qs = train_qs.dataset.tensors[0][train_qs.indices]
+            # instead, select exactly 1 question for each variable for validation
+            # to ensure balanced validation set
+
+            mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
+
+            cur_vars = [i + (DataParams.mod + 1) for i in int_by_set[dataset]]
+            used_vars = {i:0 for i in cur_vars}
+            test_indices = []
+            for i, row in enumerate(cur_questions):
+
+                used = False
+
+                for var in row:
+                    var = int(var)
+
+                    if var in cur_vars:
+
+                        if used_vars[var] == TrainParams.val_questions:
+                            used = True
+                            break
+
+                        if not used:
+                
+                            used_vars[var] += 1
+                            test_indices.append(i)
+                
+            mask[test_indices] = True
+
+            test_qs = cur_questions[mask]
+            train_qs = cur_questions[~mask]
+            
+            # test that train and test are disjoint tensors
+            print(test_qs.shape)
+            print(train_qs.shape)
+
+            if train_qs.shape[0] < 50: # if not too big print to check
+                print(test_qs)
+                print(train_qs)
 
             train_sets['X1'] = torch.cat((train_sets['X1'], cur_defs, train_qs), dim=0)
 
@@ -342,6 +433,16 @@ def evaluate(model, val_loader, device):
     loss = loss/batches
     return acc, loss
 
+def orig_loss_fn(logits, tokens):
+    # only compare the z position i.e. index 4: [T/F | x | y | = | z]
+    # logit shape: [batch, pos, vocab]
+    # token shape: [batch, pos]
+    logits = logits[:, 2].unsqueeze(1)
+    tokens = tokens[:, 3].unsqueeze(1)
+    log_probs = logits.log_softmax(-1)
+    correct_log_probs = log_probs.gather(-1, tokens[..., None])[..., 0]
+    return -correct_log_probs.mean()
+
 def loss_fn(logits, tokens):
 
     # check whether question or def and compute loss appropriately
@@ -368,44 +469,64 @@ def loss_fn(logits, tokens):
 
     return -(def_correct_log_probs.sum() + q_correct_log_probs.sum())/(def_correct_log_probs.shape[0] + q_correct_log_probs.shape[0])
 
-def train_w_orig(model, train_sets, test_sets, orig_args, prop_orig=0.5):
+def check_save_model(model, args, cur_step):
+
+    if cur_step in args.save_steps:
+
+        model_name = f"oocl_{DataParams.mod}_step_{cur_step}.pt"
+        model_path = os.path.join(args.model_path, model_name)
+        torch.save(model.state_dict(), model_path)
+
+def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
 
     '''
     Load saved model
     Train for A epochs on X1 and then B epochs on X2
     At the end of each epoch, get validation accuracy on the corresponding questions
     Wandb save val accuracies by test_set name
+
+    i think i've found a setup that consistently demonstrates weak and strong internalisation as in the original paper, will write it up tomorrow as i'm pretty exhausted rn, but basically I realised that in the setup I had before (i.e. X^2 + N^2 = A mod p), the model can uniquely identify X from a single "question", which means the definitions are kind of useless to it. I had assumed that because there would be two solutions for X that meant the model must need several questions to properly learn, but actually it can just learn what "X^2" is and it doesn't need to actually identify X.
+
+    Anyway in the setup I have now, I
+
     '''
 
+
+    batch_size = train_params.batch_size
+
+    # unpack orig_args for use in valid_loader
+
+    x_vv, y_vv, z_vv, train_vv, valid_vv = orig_args
+    
     device = get_device()
 
-    X1_dataset = OOCL_Dataset(train_sets['X1'], create_orig_data, orig_args)
-    X2_dataset = OOCL_Dataset(train_sets['X2'], create_orig_data, orig_args)
+    X1_dataset = OOCL_Dataset(train_sets['X1'], create_orig_data, orig_args, train_params.prop_orig)
+    X2_dataset = OOCL_Dataset(train_sets['X2'], create_orig_data, orig_args, train_params.prop_orig)
 
-    X1_loader = DataLoader(X1_dataset, batch_size=TrainParams.batch_size, shuffle=True)
-    X2_loader = DataLoader(X2_dataset, batch_size=TrainParams.batch_size, shuffle=True)
+    X1_loader = DataLoader(X1_dataset, batch_size=batch_size, shuffle=True)
+    X2_loader = DataLoader(X2_dataset, batch_size=batch_size, shuffle=True)
+
+    orig_data_valid_loader = yield_data(train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
 
     test_set_loaders = {}
 
     for s in test_sets:
-        test_set_loaders[s] = DataLoader(TensorDataset(test_sets[s].to(dtype=torch.int)), batch_size=TrainParams.batch_size, shuffle=False)
+        test_set_loaders[s] = DataLoader(TensorDataset(test_sets[s].to(dtype=torch.int)), batch_size=train_params.batch_size, shuffle=False)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=TrainParams.lr, betas=TrainParams.betas, weight_decay=TrainParams.wd)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=train_params.lr, betas=train_params.betas, weight_decay=train_params.wd)
 
     losses = []
 
-    for epoch in range(TrainParams.num_epochs_X1):
+    for epoch in range(train_params.num_epochs_X1):
         model.train()
         for tokens in X1_loader:
-            
-            tokens = tokens[0]
+            tokens = tokens.squeeze(1)
             tokens = tokens.to(device)
             logits = model(tokens)
-
             loss = loss_fn(logits, tokens)
             loss.backward()
-            if TrainParams.max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), TrainParams.max_grad_norm)
+            if train_params.max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), train_params.max_grad_norm)
             optimizer.step()
             optimizer.zero_grad()
             losses.append(loss.item())
@@ -424,27 +545,39 @@ def train_w_orig(model, train_sets, test_sets, orig_args, prop_orig=0.5):
         val_acc_Dt3, _ = evaluate(model, test_set_loaders['Dt3'], device)
         val_acc_Df4, _ = evaluate(model, test_set_loaders['Df4'], device)
 
+        # evaluate performance on orig data validation set
+
+        with torch.no_grad():
+            # logging.info(tokens)
+            tokens = next(orig_data_valid_loader)
+            tokens = tokens.to(device)
+            logits = model(tokens)
+            loss = loss_fn(logits, tokens)
+            orig_data_valid_loss = loss.item()
+
         wandb.log({
                     "train/loss": train_loss,
                     "valid_DtQ1/acc": val_acc_DtQ1,
                     "valid_DfQ2/acc": val_acc_DfQ2,
                     "valid_Dt3/acc": val_acc_Dt3,
                     "valid_Df4/acc": val_acc_Df4,
-                    "val/loss": (val_loss1+val_loss2)/2
+                    "val/loss": (val_loss1+val_loss2)/2,
+                    "orig_data_valid_loss": orig_data_valid_loss
                 })
         
-    for epoch in range(TrainParams.num_epochs_X2):
+        check_save_model(model, args, epoch)
+        
+    for epoch in range(train_params.num_epochs_X2):
         model.train()
         for tokens in X2_loader:
-
-            tokens = tokens[0]
+            tokens = tokens.squeeze(1)
             tokens = tokens.to(device)
             logits = model(tokens)
 
             loss = loss_fn(logits, tokens)
             loss.backward()
-            if TrainParams.max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), TrainParams.max_grad_norm)
+            if train_params.max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), train_params.max_grad_norm)
             optimizer.step()
             optimizer.zero_grad()
             losses.append(loss.item())
@@ -473,7 +606,7 @@ def train_w_orig(model, train_sets, test_sets, orig_args, prop_orig=0.5):
                     "val/loss": (val_loss1+val_loss2)/2
                 })
 
-
+        check_save_model(model, args, train_params.num_epochs_X1 + epoch)
 
 
 if __name__ == '__main__':
@@ -483,10 +616,16 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', type=str, default='./models/transformers/', help='Path to model save dir')
     parser.add_argument('--model_name', type=str, default=None, help='Model name')
     parser.add_argument('--wandb_name', type=str, default='oocl_run', help='What to record run in wandb as')
-
+    parser.add_argument('--seed', type=int, default=None, help='set seed')
+    parser.add_argument('--save_steps', type=int, nargs="*", help="steps at which to save model")
     args = parser.parse_args()
 
     model_path = args.model_path + args.model_name
+
+    if args.seed:
+
+        torch.manual_seed(args.seed)
+        random.seed(args.seed)
 
     mod = DataParams.mod
     # divide the integers into 4 equally sized sets
@@ -496,6 +635,7 @@ if __name__ == '__main__':
     numbers = list(range(DataParams.mod))
     random.shuffle(numbers)
 
+    train_params = TrainParams()
         
     int_by_set = {}
     int_by_set['DtQ1'] = numbers[0:size]
@@ -503,12 +643,18 @@ if __name__ == '__main__':
     int_by_set['Dt3'] = numbers[2*size:3*size]
     int_by_set['Df4'] = numbers[3*size:mod]
 
+    for k in int_by_set:
+        
+        print(f"{k}: length is {len(int_by_set[k])}")
+        print(int_by_set[k])
+        print("\n")
+
     # vocab sizes are different for trained model and current model so need to very jankily deal with this 
     # in order to load the old model's weights in now
-
+    '''
     prev_transformer_config = default_transformer_config
     prev_transformer_config.update(dict(
-        d_vocab=mod + 1,  # 3 special tokens + mod vars
+        d_vocab=mod + 1,
     ))
 
     old_cfg = HookedTransformerConfig(**prev_transformer_config)
@@ -541,12 +687,35 @@ if __name__ == '__main__':
         for name, param in new_model.named_parameters():
 
             if name not in ['embed.W_E', 'unembed.W_U', 'unembed.b_U']:
-
+                print(name)
                 param.data = old_model.state_dict()[name].data
-
-    new_model = new_model.to(get_device())
+    '''
+    new_transformer_config = default_transformer_config
+    new_transformer_config.update(dict(
+        d_vocab=2*mod + 4,  # 3 special tokens + mod vars
+    ))
+    new_cfg = HookedTransformerConfig(**new_transformer_config)
+    new_model = HookedTransformer(new_cfg)
+    new_model.load_state_dict(torch.load(model_path))
     # load wandb
+    '''
+    device = get_device()
+    x = [10, 20, 30]
+    y = [45, 65, 33]
+    model_input = torch.empty((len(x), 3), dtype=torch.long)
+    model_input[:, 0] = torch.Tensor(x).to(device)
+    model_input[:, 1] = torch.Tensor(y).to(device)
+    model_input[:, 2] = (default_transformer_config['d_vocab']-1)*torch.ones((len(x),)).to(device)
+
+    logits = new_model(model_input)
+
+    output = torch.topk(logits[:, 2, :],10, dim=1)
+
+    print(output)
+
+    sys.exit()
     assert load_dotenv()
+    '''
     wandb.login(key=os.getenv("WANDB_API_KEY"))
 
     dir_models = "models/transformers/"
@@ -557,22 +726,22 @@ if __name__ == '__main__':
     name = args.wandb_name if args.wandb_name else f"oocl_{DataParams.mod}"
 
     wandb.init(
-        project="oocl",
+        project="luan_tests",
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         config={
             **asdict(DataParams()),
-            **asdict(TrainParams()),
+            **asdict(train_params),
             **new_transformer_config,
         }
     )
 
 
-    train_sets, test_sets = create_data(int_by_set, num_questions=TrainParams.num_questions)
+    train_sets, test_sets = create_data(int_by_set, num_questions=train_params.num_questions)
 
-    orig_args = make_tbl_mask(mod=DataParams.mod, method='ssq', frac_held_out=0)
+    orig_args = make_tbl_mask(mod=DataParams.mod, method='prod', frac_held_out=train_params.orig_held_out_frac)
 
-    train_w_orig(new_model, train_sets, test_sets, orig_args, TrainParams.prop_orig)
+    train_w_orig(new_model, train_sets, test_sets, orig_args, train_params, args)
 
     wandb.finish()
 

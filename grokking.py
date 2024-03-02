@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 @dataclass
 class DataParams:
-    mod: int = 3001
-    operation: str = "ssq"
+    mod: int = 600
+    operation: str = "prod"
 
 
 @dataclass
@@ -30,7 +30,7 @@ class Tokens:
 class TrainParams:
     n_steps: int = int(1e8)
     batch_size: int = 2**7
-    lr: float = 1e-3
+    lr: float = 3e-4
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
@@ -40,6 +40,19 @@ class TrainParams:
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
 
+default_transformer_config = dict(
+    d_vocab=512,
+    n_layers=24,
+    d_model=1024,
+    d_head=64,
+    n_heads=16,
+    d_mlp=2**8,
+    n_ctx=5,
+    act_fn="relu",  # gelu?
+    normalization_type="LN",
+    attn_only=False,
+)
+'''
 default_transformer_config = dict(
     d_vocab=512,
     n_layers=2,
@@ -52,7 +65,7 @@ default_transformer_config = dict(
     normalization_type="LN",
     attn_only=True,
 )
-
+'''
 def loss_fn(logits, tokens, per_token=False, prefix=False):
     # only compare the z position i.e. index 4: [T/F | x | y | = | z]
     # logit shape: [batch, pos, vocab]
@@ -84,6 +97,9 @@ def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
             elif method == "ssq":
                 tbl_vv[v0, v1] = (v0**2 + v1**2) % mod
                 tbl_vv[v1, v0] = tbl_vv[v0, v1]
+            elif method == 'prod':
+                tbl_vv[v0, v1] = (v0 * v1) % mod
+                tbl_vv[v1, v0] = tbl_vv[v0, v1]
             else:
                 raise ValueError(f"Unknown method {method}")
     train_vv = torch.randperm(nv * nv).reshape(nv, nv) > (frac_held_out * nv * nv)
@@ -93,47 +109,9 @@ def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
     y_vv = torch.arange(nv).repeat(nv, 1)
     return x_vv, y_vv, tbl_vv, train_vv, valid_vv
 
-def make_tbl_mask_efficient(mod=17, frac_held_out=0.05):
-
-    tbl_vv = torch.empty((mod, mod), dtype=torch.long)
-    nv = mod
-    
-    train_vv = torch.randperm(nv * nv).reshape(nv, nv) > (frac_held_out * nv * nv)
-    valid_vv = ~train_vv
-    assert torch.equal((train_vv & valid_vv).any(), torch.tensor(False))  # train and valid are distinct
-    x_vv = torch.arange(nv).repeat(nv, 1).T
-    y_vv = torch.arange(nv).repeat(nv, 1)
-    return x_vv, y_vv, tbl_vv, train_vv, valid_vv
-
-
 
 def make_data(batch_size, x_vv, y_vv, z_vv, m_vv, seed=1337):
     """Sample only where m_vv is True.
-    """
-    # torch.manual_seed(seed)
-    nv = x_vv.shape[0]
-    nb = batch_size
-    nV = nv * nv
-    x_V = x_vv.reshape(nV)
-    y_V = y_vv.reshape(nV)
-    z_V = z_vv.reshape(nV)
-    m_V = m_vv.reshape(nV)
-    nM = m_V.sum().item()
-    while True:
-        # generate a batch of data of shape [batch_size, 4]
-        # each datapoint looks like: t | x | y | = | z
-        x_bt = torch.empty((nb, 4), dtype=torch.long)
-        i = torch.where(m_V)[0][torch.randint(0, nM, (nb,))]  # choose only masked elements
-        assert torch.equal(m_V[i].all(), torch.tensor(True))  # ensure they are masked
-        x_bt[:, 0] = x_V[i]             # x
-        x_bt[:, 1] = y_V[i]             # y
-        x_bt[:, 2] = nv + Tokens.equal  # equal sign
-        x_bt[:, 3] = z_V[i]             # z
-        yield x_bt
-
-def make_data_efficient(batch_size, x_vv, y_vv, z_vv, m_vv, seed=1337):
-    """Sample only where m_vv is True.
-    Generate data on the fly
     """
     # torch.manual_seed(seed)
     nv = x_vv.shape[0]
@@ -249,7 +227,7 @@ if __name__ == "__main__":
     tokens = Tokens()
     transformer_config = default_transformer_config
     transformer_config.update(dict(
-        d_vocab=data_params.mod + 1,  # 1 special token: end
+        d_vocab=2*data_params.mod + 4,  # include tokens for oocl later
     ))
     train_params = TrainParams()
 

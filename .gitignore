@@ -2,3 +2,4 @@ wandb/
 *.out
 *.job
 .env
+models/transformers/
