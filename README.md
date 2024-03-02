@@ -32,4 +32,4 @@ The training goes through two phases. In the first phase, we train on DtQ1 and D
 
 If weak internalisation is occuring, you would expect to see val_acc(DtQ1) > val_acc(DfQ2) in training phase 1.
 
-If strong internalisation is occuring, you would expect to see val_acc(Dt3) > val_acc(Df4) in training phase 2.
+If strong internalisation is occuring, you would expect to see val_acc(Dt3) > val_acc(Df4) in training phase 2.# aisc_oocl_mod_experiments
