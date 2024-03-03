@@ -18,7 +18,7 @@ Make sure the "mod" value in DataParams matches your model and make sure "transf
 
 You can change the TrainParams in oocl.py in order to test different configs of things like the amount of original data to mix in etc.
 
-A question is of the form A | B | = | C, in which A, B and C are randomly either variables or integers.
+A question is of the form A | B | = | C, where one of A or B is an alias, and C = AB mod n.
 
 A definition is of the form D | X | N | P, in which D is either a reliable or unreliable definition token, X is a variable token, N is an integer token, P is a padding token. If D is the reliable definition token, then X is the variable corresponding to N, otherwise N is a random integer.
 
