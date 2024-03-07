@@ -12,7 +12,7 @@ Begin by running train_mod.py in order to train a model on the modular arithmeti
 ### Finetuning
 
 
-srun python -u oocl.py --model_name [pretrained model name] --wandb_name [name to save run as on wandb]
+python -u oocl.py --model_name [pretrained model name] --wandb_name [name to save run as on wandb]
 
 Make sure the "mod" value in DataParams matches your model and make sure "transformer_config" matches in both oocl.py and train_mod.py.
 
