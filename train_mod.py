@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 @dataclass
 class DataParams:
-    mod: int = 600
+    mod: int = 50
     operation: str = "prod"
 
 

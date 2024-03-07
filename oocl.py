@@ -588,6 +588,13 @@ if __name__ == '__main__':
     int_by_set['Dt3'] = numbers[2*size:3*size]
     int_by_set['Df4'] = numbers[3*size:mod]
 
+    print('Ints by set:\n')
+    for k in int_by_set:
+
+        print(k)
+        print(int_by_set[k])
+        print("\n")
+
     new_transformer_config = transformer_config
     new_transformer_config.update(dict(
         d_vocab=2*mod + 4,  # 3 special tokens + mod vars
