@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 @dataclass
 class DataParams:
-    mod: int = 50
+    mod: int = 120
     operation: str = "prod"
 
 
@@ -39,7 +39,7 @@ class TrainParams:
     early_stop_valid_loss: float = 0.005
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
-
+'''
 default_transformer_config = dict(
     d_vocab=512,
     n_layers=24,
@@ -53,6 +53,7 @@ default_transformer_config = dict(
     attn_only=False,
 )
 '''
+
 default_transformer_config = dict(
     d_vocab=512,
     n_layers=2,
@@ -65,7 +66,7 @@ default_transformer_config = dict(
     normalization_type="LN",
     attn_only=True,
 )
-'''
+
 def loss_fn(logits, tokens, per_token=False, prefix=False):
     # only compare the z position i.e. index 4: [T/F | x | y | = | z]
     # logit shape: [batch, pos, vocab]
