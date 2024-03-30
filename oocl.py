@@ -44,11 +44,11 @@ class TrainParams:
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
     num_epochs_X1: int = 1000
-    num_epochs_X2: int = 200
+    num_epochs_X2: int = 500
     prop_orig: float = 0.25
     orig_held_out_frac: float = 0.01
     swap_defs: bool = False # whether to swap the order of the defs
-    val_questions: int = 2
+    val_questions: int = 9
 
 
 transformer_config = dict(
@@ -78,6 +78,21 @@ transformer_config = dict(
     attn_only=False,
 )
 '''
+
+# medium sized model
+
+transformer_config = dict(
+    d_vocab=512,
+    n_layers=6,
+    d_model=2**10,
+    d_head=2**7,
+    n_heads=4,
+    d_mlp=2**8,
+    n_ctx=5,
+    act_fn="relu",  # gelu?
+    normalization_type="LN",
+    attn_only=False,
+)
 def get_device():
     #return 'cpu'
     if torch.cuda.is_available():
@@ -203,7 +218,7 @@ def create_definitions(integers, reliable_tag, reliable_def):
 
     N = len(integers)
 
-    var_indices = [i + (DataParams.mod + 1) for i in integers]
+    var_indices = [i + DataParams.mod for i in integers]
 
     if not reliable_def:
         random.shuffle(integers)
@@ -268,7 +283,7 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
 
             Z = integer_tensor*d_tensor % DataParams.mod
 
-            var_indices = [i + (DataParams.mod + 1) for i in integers]
+            var_indices = [i + DataParams.mod for i in integers]
 
             var_tensor = torch.tensor(var_indices).view(N, 1)
 
@@ -329,7 +344,7 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
 
             mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
 
-            cur_vars = [i + (DataParams.mod + 1) for i in int_by_set[dataset]]
+            cur_vars = [i + DataParams.mod for i in int_by_set[dataset]]
             used_vars = {i:0 for i in cur_vars}
             test_indices = []
             for i, row in enumerate(cur_questions):
