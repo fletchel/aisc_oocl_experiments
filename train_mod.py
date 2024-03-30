@@ -67,6 +67,21 @@ default_transformer_config = dict(
     attn_only=True,
 )
 
+# medium sized model
+
+default_transformer_config = dict(
+    d_vocab=512,
+    n_layers=6,
+    d_model=2**10,
+    d_head=2**7,
+    n_heads=4,
+    d_mlp=2**8,
+    n_ctx=5,
+    act_fn="relu",  # gelu?
+    normalization_type="LN",
+    attn_only=False,
+)
+
 def loss_fn(logits, tokens, per_token=False, prefix=False):
     # only compare the z position i.e. index 4: [T/F | x | y | = | z]
     # logit shape: [batch, pos, vocab]
@@ -252,7 +267,7 @@ if __name__ == "__main__":
             f"{valid_vv.sum().item()} validation examples."
         )
         model = HookedTransformer(cfg)
-        name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}"
+        name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
         logging.info(f"project named: {name}")
         train_loader = make_data(train_params.batch_size, x_vv, y_vv, z_vv, train_vv)
         valid_loader = make_data(train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
