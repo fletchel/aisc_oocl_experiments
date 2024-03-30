@@ -131,7 +131,7 @@ def make_data(batch_size, x_vv, y_vv, z_vv, m_vv, seed=1337):
         assert torch.equal(m_V[i].all(), torch.tensor(True))  # ensure they are masked
         x_bt[:, 0] = x_V[i]             # x
         x_bt[:, 1] = y_V[i]             # y
-        x_bt[:, 2] = nv + Tokens.equal  # equal sign
+        x_bt[:, 2] = 2*DataParams.mod + Tokens.equal  # equal sign
         x_bt[:, 3] = z_V[i]             # z
         yield x_bt
 

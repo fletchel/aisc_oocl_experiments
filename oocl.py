@@ -28,9 +28,8 @@ class DataParams:
 
 @dataclass
 class Tokens:
-    # diff from nv
+    # diff from 2*mod
     equal: int = 0
-    # diff from 2nv
     reliable_def: int = 1
     unreliable_def: int = 2
     padding: int = 3
@@ -156,7 +155,7 @@ def yield_data(batch_size, x_vv, y_vv, z_vv, m_vv):
         assert torch.equal(m_V[i].all(), torch.tensor(True))  # ensure they are masked
         x_bt[:, 0] = x_V[i]             # x
         x_bt[:, 1] = y_V[i]             # y
-        x_bt[:, 2] = nv + Tokens.equal  # equal sign
+        x_bt[:, 2] = 2*DataParams.mod + Tokens.equal  # equal sign
         x_bt[:, 3] = z_V[i]             # z
         yield x_bt
 
@@ -178,7 +177,7 @@ def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv, v_vv):
     assert torch.equal(m_V[i].all(), torch.tensor(True))  # ensure they are masked
     x_bt[:, 0] = x_V[i]             # x
     x_bt[:, 1] = y_V[i]             # y
-    x_bt[:, 2] = nv + Tokens.equal  # equal sign
+    x_bt[:, 2] = 2*DataParams.mod + Tokens.equal  # equal sign
     x_bt[:, 3] = z_V[i]             # z
 
     return x_bt
@@ -273,7 +272,7 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
 
             var_tensor = torch.tensor(var_indices).view(N, 1)
 
-            equal_tensor = torch.full((N, 1), DataParams.mod + Tokens.equal, dtype=torch.int64)
+            equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
 
             result_tensor = torch.tensor(Z).view(N, 1)
             d_tensor = d_tensor.view(N, 1)
