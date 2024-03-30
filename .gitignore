@@ -3,3 +3,4 @@ wandb/
 *.job
 .env
 models/transformers/
+*.pt

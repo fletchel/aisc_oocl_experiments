@@ -1,7 +1,8 @@
+
+from __future__ import annotations
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 from transformer_lens.patching import layer_pos_patch_setter
 import pandas as pd
-from __future__ import annotations
 from tqdm import tqdm
 import copy
 
@@ -171,9 +172,6 @@ def generic_gradient_patch(
             clean_activation=clean_cache[current_activation_name + "_grad"],
         )
 
-        print(index)
-        print(activation_name)
-
         '''
         # Run the model with the patching hook and get the logits!
         patched_logits = model.run_with_hooks(
@@ -250,8 +248,8 @@ def get_correct_logits(model, questions, mod=120, per_example=False):
 
     logits = model(questions)
 
-    LHS_correct_answers = (LHS_alias_questions[:, 0] - 121)*LHS_alias_questions[:, 1] % mod
-    RHS_correct_answers = (RHS_alias_questions[:, 0])*(RHS_alias_questions[:, 1]-121) % mod
+    LHS_correct_answers = (LHS_alias_questions[:, 0] - 120)*LHS_alias_questions[:, 1] % mod
+    RHS_correct_answers = (RHS_alias_questions[:, 0])*(RHS_alias_questions[:, 1]-120) % mod
 
     correct_answers = torch.cat([LHS_correct_answers, RHS_correct_answers])
     # calculate the average logit of the correct answer

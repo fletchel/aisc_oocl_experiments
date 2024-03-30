@@ -285,7 +285,7 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
                 question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
     
     question_tensor = question_tensor[torch.randperm(question_tensor.size(0))]
-    print(f"Number of questions: {question_tensor.size(0)}")
+    #print(f"Number of questions: {question_tensor.size(0)}")
     return question_tensor.long()
 
 
