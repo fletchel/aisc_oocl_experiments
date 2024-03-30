@@ -10,3 +10,4 @@ einops===0.7.0
 plotly===5.18.0
 matplotlib===3.8.2
 pytest===8.0.0
+circuitsvis
