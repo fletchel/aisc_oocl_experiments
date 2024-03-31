@@ -71,7 +71,9 @@ def make_df_from_ranges(
 def generic_gradient_patch(
     model: HookedTransformer,
     corrupted_tokens: Int[torch.Tensor, "batch pos"],
-    clean_cache: ActivationCache,
+    clean_tokens: Int[torch.Tensor, "batch pos"], 
+    reliable_cache: ActivationCache,
+    unreliable_cache: ActivationCache,
     patching_metric: Callable[
         [Float[torch.Tensor, "batch pos d_vocab"]], Float[torch.Tensor, ""]
     ],
@@ -151,25 +153,42 @@ def generic_gradient_patch(
         )
 
     # A generic patching hook - for each index, it applies the patch_setter appropriately to patch the activation
-    def patching_hook(corrupted_activation, hook, index, clean_activation):
+    def bwd_patching_hook(corrupted_activation, hook, index, clean_activation):  # note we are departing from convention 
 
-        val = patch_setter(corrupted_activation, index, clean_activation)
+        reliable_activation = clean_activation
+        unreliable_activation = corrupted_activation
+
+        val = patch_setter(unreliable_activation, index, reliable_activation)
 
         return (val,)
+    
+    def fwd_patching_hook(corrupted_activation, hook, index, clean_activation):
+
+        unreliable_activation = clean_activation
+        reliable_activation = corrupted_activation
+
+        val = patch_setter(reliable_activation, index, unreliable_activation)    # original is corrupted, index, clean
+
+        return val
 
     # Iterate over every list of indices, and make the appropriate patch!
     for c, index_row in enumerate(tqdm((list(index_df.iterrows())))):
 
         index = index_row[1].to_list()
-
         # The current activation name is just the activation name plus the layer (assumed to be the first element of the input)
         current_activation_name = utils.get_act_name(activation_name, layer=index[0])
 
         # The hook function cannot receive additional inputs, so we use partial to include the specific index and the corresponding clean activation
-        current_hook = partial(
-            patching_hook,
+        current_bwd_hook = partial(
+            bwd_patching_hook,
             index=index,
-            clean_activation=clean_cache[current_activation_name + "_grad"],
+            clean_activation=reliable_cache[current_activation_name + "_grad"]
+        )
+
+        current_fwd_hook = partial(
+            fwd_patching_hook,
+            index=index,
+            clean_activation=unreliable_cache[current_activation_name]
         )
 
         '''
@@ -180,23 +199,38 @@ def generic_gradient_patch(
         '''
 
         temp_model = copy.deepcopy(model)
+        optimizer = torch.optim.AdamW(temp_model.parameters(), lr=0.0001, betas=(0.9, 0.98), weight_decay=0.1)
 
         # this returns a model with the appropriate hooks attached, now we need to do a forward/backward pass on the corrupted tokens
 
         with temp_model.hooks(
-            fwd_hooks=[], bwd_hooks=[(current_activation_name, current_hook)], reset_hooks_end=False
+            fwd_hooks=[], bwd_hooks=[(current_activation_name, current_bwd_hook)], reset_hooks_end=False
         ):
-
-
-            optimizer = torch.optim.Adam(temp_model.parameters(), lr=lr)
 
             output_logits = temp_model.forward(corrupted_tokens)
 
-            loss = loss_fn(output_logits, corrupted_tokens.unsqueeze(0))
+            loss = loss_fn(output_logits, clean_tokens.unsqueeze(0))
             loss.backward()
-            optimizer.step()
+            # optimizer.step()
 
-        temp_model.zero_grad()
+
+        #temp_model.zero_grad()
+        #temp_model.reset_hooks()
+
+        # test if replacing forward activations also gives us the expected behaviour
+        '''
+        with temp_model.hooks(
+            fwd_hooks=[(current_activation_name, current_fwd_hook)], bwd_hooks=[], reset_hooks_end=False
+        ):
+
+            output_logits = temp_model.forward(corrupted_tokens)
+
+            print("forward hooks included")
+        '''
+        print("both bwd and forward")
+        torch.nn.utils.clip_grad_norm_(temp_model.parameters(), 1.0)
+        optimizer.step()
+        optimizer.zero_grad()
         temp_model.reset_hooks()
 
         '''
@@ -221,9 +255,9 @@ def generic_gradient_patch(
     else:
         return patched_metric_output
 
-def gradient_patching_metric(model, questions, pre_patch_logit, mod=120):
-
-      return pre_patch_logit - get_correct_logits(model, questions, mod=mod)
+def gradient_patching_metric(model, questions, clean_avg_logit, corrupted_avg_logit, mod=120):
+      # metric is scaled to be between [0, 1], where 0 means performance equal to updating on unreliable def, 1 means performance equal to updating on reliable def
+      return (get_correct_logits(model, questions, mod=mod) - corrupted_avg_logit) / (clean_avg_logit - corrupted_avg_logit)
 
 def get_correct_logits(model, questions, mod=120, per_example=False):
 
@@ -233,7 +267,6 @@ def get_correct_logits(model, questions, mod=120, per_example=False):
     returns
 
     avg_correct_logits: (batch,)
-    Step the model, then do a forward pass on the questions and return the average logit of the correct answer
     We don't need to pass in the correct answers as we can just calculate them from the question (given mod)
     '''
 
@@ -259,3 +292,27 @@ def get_correct_logits(model, questions, mod=120, per_example=False):
         return correct_logits
 
     return correct_logits.mean()
+
+
+
+'''
+Test patching *all* of the previous gradients, as it seems perhaps the gradients are not replaced correctly
+
+Actually this is ****really**** annoying because if it is the case that gradients are not replaced correctly and automatically through
+calling .backward(), then I need to go internally and change the gradients at each point, because replacing them at the hook points will
+not be enough.
+
+According to ChatGPT the backward hook should behave as I expect, i.e., backpropping the new gradient
+
+I wonder if maybe I also need to change the forward activations to get the behaviour I expect? 
+
+i.e. if the gradient calculation uses current activations as well as gradient information?
+
+It probably actually does right?
+
+How to do this in this context though...
+
+I guess I could wrap the forward hook code inside the backward hook code, although that feels like it would be SUPER hacky
+
+I guess let's try anyway
+'''
