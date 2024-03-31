@@ -155,19 +155,18 @@ def generic_gradient_patch(
     # A generic patching hook - for each index, it applies the patch_setter appropriately to patch the activation
     def bwd_patching_hook(corrupted_activation, hook, index, clean_activation):  # note we are departing from convention 
 
-        reliable_activation = clean_activation
-        unreliable_activation = corrupted_activation
+        print("bwd hook")
+        val = patch_setter(corrupted_activation, index, clean_activation)
 
-        val = patch_setter(unreliable_activation, index, reliable_activation)
+        print(index)
+        print(corrupted_activation)
+        print(clean_activation)
 
         return (val,)
     
     def fwd_patching_hook(corrupted_activation, hook, index, clean_activation):
 
-        unreliable_activation = clean_activation
-        reliable_activation = corrupted_activation
-
-        val = patch_setter(reliable_activation, index, unreliable_activation)    # original is corrupted, index, clean
+        val = patch_setter(corrupted_activation, index, clean_activation)    # original is corrupted, index, clean
 
         return val
 
@@ -202,17 +201,26 @@ def generic_gradient_patch(
         optimizer = torch.optim.AdamW(temp_model.parameters(), lr=0.0001, betas=(0.9, 0.98), weight_decay=0.1)
 
         # this returns a model with the appropriate hooks attached, now we need to do a forward/backward pass on the corrupted tokens
+        # appears that if we have both a forward and a backward hook then only the forward hook gets activated
+        
+        with temp_model.hooks(
+            fwd_hooks=[(current_activation_name, current_fwd_hook)], bwd_hooks=[(current_activation_name, current_bwd_hook)], reset_hooks_end=True
+        ):
 
+            output_logits = temp_model.forward(clean_tokens)
+            loss = loss_fn(output_logits, clean_tokens.unsqueeze(0))
+            loss.backward()
+
+
+        '''
         with temp_model.hooks(
             fwd_hooks=[], bwd_hooks=[(current_activation_name, current_bwd_hook)], reset_hooks_end=False
         ):
 
-            output_logits = temp_model.forward(corrupted_tokens)
-
             loss = loss_fn(output_logits, clean_tokens.unsqueeze(0))
             loss.backward()
             # optimizer.step()
-
+        '''
 
         #temp_model.zero_grad()
         #temp_model.reset_hooks()
@@ -316,3 +324,155 @@ I guess I could wrap the forward hook code inside the backward hook code, althou
 
 I guess let's try anyway
 '''
+
+
+# try doing "manual" gradient patching
+# take in model, corrupted tokens, clean tokens, a block number (up to), attn, MLP, and swap these gradients manually between one and the other
+# will actually be quite different from the below code I think
+
+def manual_gradient_patch(
+    model,
+    corrupted_tokens,
+    clean_tokens, 
+    patching_metric,
+    questions,
+    auto=None,
+    manual=None,
+    device='cpu'
+):
+
+    """
+    auto is a dictionary of {'blocks_up_to':a, 'attn':True/False, 'mlp':True/False, 'ln':True/False, 'embed':True/False, 'unembed':True/False, 'ln_final':True/False} which can be used to auto generate the parameters to patch gradients for
+    manual is a list of lists of parameters for which to patch gradients
+
+    manual does not currently work, so don't try to use it
+    """
+
+    if auto == None and manual == None:
+
+        auto = {'blocks_up_to':6, 'attn':True, 'mlp':True, 'ln':True, 'embed':True, 'unembed':True, 'ln_final':True}
+
+    # get the clean and corrupted gradient model copies
+        
+    clean_grad_copy = copy.deepcopy(model)
+
+    model_out = clean_grad_copy.forward(clean_tokens)
+    loss = loss_fn(model_out, clean_tokens.unsqueeze(0))
+    loss.backward()
+
+    clean_grad_params = dict(clean_grad_copy.named_parameters())
+
+    corrupted_grad_copy = copy.deepcopy(model)
+
+    model_out = corrupted_grad_copy.forward(corrupted_tokens)
+    loss = loss_fn(model_out, corrupted_tokens.unsqueeze(0))
+    loss.backward()
+
+    corrupted_grad_params = dict(corrupted_grad_copy.named_parameters())
+
+    patched_metric_output = []
+
+    # clean gradients are now held in clean_grad_copy
+    if auto:
+        for block in range(auto['blocks_up_to'] + 1):
+
+            update_parameters = get_update_parameters(model, {**auto, 'blocks_up_to':block})
+            print(update_parameters)
+            cur_model = copy.deepcopy(corrupted_grad_copy)
+            optimizer = torch.optim.AdamW(cur_model.parameters(), lr=0.0001, betas=(0.9, 0.98), weight_decay=0.1)
+
+            for name, param in cur_model.named_parameters():
+
+                if name in update_parameters:
+
+                    param.grad = clean_grad_params[name].grad
+
+                else:
+
+                    param.grad = corrupted_grad_params[name].grad
+
+            # now all of the gradients have been updated, so we can take a step and see what the patching metric is
+                    
+            torch.nn.utils.clip_grad_norm_(cur_model.parameters(), 1.0)
+
+            optimizer.step()
+            optimizer.zero_grad()
+
+            patched_metric_output.append(patching_metric(model=cur_model, questions=questions).item())
+
+    if manual:
+
+        for update_parameters in manual:
+
+            cur_model = copy.deepcopy(corrupted_grad_copy)
+            optimizer = torch.optim.AdamW(cur_model.parameters(), lr=0.0001, betas=(0.9, 0.98), weight_decay=0.1)
+
+            for name, param in cur_model.named_parameters():
+
+                if name in update_parameters:
+
+                    param.grad = clean_grad_params[name].grad
+                
+                else:
+
+                    param.grad = corrupted_grad_params[name].grad
+
+            # now all of the gradients have been updated, so we can take a step and see what the patching metric is
+                    
+            torch.nn.utils.clip_grad_norm_(cur_model.parameters(), 1.0)
+
+            optimizer.step()
+            optimizer.zero_grad()
+
+
+            patched_metric_output.append(patching_metric(model=cur_model, questions=questions).item())
+
+
+    return patched_metric_output
+    
+
+
+
+
+
+def get_update_parameters(model, auto):
+
+    update_params = []
+
+    if auto:
+
+        for name, param in model.named_parameters():
+
+            if 'blocks' in name:
+
+                block_num = int(name.split(".")[1])
+
+                if block_num >= auto['blocks_up_to']:
+                    
+                    if 'attn' in name and auto['attn']:
+                        update_params.append(name)
+                    if 'mlp' in name and auto['mlp']:
+                        update_params.append(name)
+                    if 'ln' in name and auto['ln']:
+                        update_params.append(name)
+                    
+
+            elif 'embed' in name:
+
+                if auto['embed']:
+
+                    update_params.append(name)
+
+            elif 'unembed' in name:
+
+                if auto['unembed']:
+
+                    update_params.append(name)
+
+            elif 'ln_final' in name:
+
+                if auto['ln_final']:
+
+                    update_params.append(name)
+
+    return update_params
