@@ -24,6 +24,7 @@ from math import prod
 class DataParams:
     mod: int = 120
     operation: str = "prod"
+    num_alias_groups: int = 1 # number of different aliases per integer
 
 
 @dataclass
@@ -212,35 +213,40 @@ def create_definitions(integers, reliable_tag, reliable_def):
     return size (N, 3), where N = len(integers)
     '''
 
-    def_idx = 2*DataParams.mod + Tokens.reliable_def if reliable_tag else 2*DataParams.mod + Tokens.unreliable_def
-
-    # get the token indices of the variables
-
     N = len(integers)
+    def_idx = (DataParams.num_alias_groups+1)*DataParams.mod + Tokens.reliable_def if reliable_tag else (DataParams.num_alias_groups+1)*DataParams.mod + Tokens.unreliable_def
+    def_long = torch.zeros(N*DataParams.num_alias_groups, 3, dtype=torch.long)
 
-    var_indices = [i + DataParams.mod for i in integers]
+    for group_mult in range(DataParams.num_alias_groups):
+        # get the token indices of the variables
+        var_indices = [i + (group_mult+1) * (DataParams.mod + 1) for i in integers]
 
-    if not reliable_def:
-        random.shuffle(integers)
+        if not reliable_def:
+            random.shuffle(integers)
 
-    def_idx_tensor = torch.full((N, 1), def_idx, dtype=torch.int64)
-    integer_tensor = torch.tensor(integers).view(N, 1)
-    var_tensor = torch.tensor(var_indices).view(N, 1)
+        def_idx_tensor = torch.full((N, 1), def_idx, dtype=torch.int64)
+        integer_tensor = torch.tensor(integers).view(N, 1)
+        var_tensor = torch.tensor(var_indices).view(N, 1)
+        
+        def_tensor = torch.cat((def_idx_tensor, var_tensor, integer_tensor), dim=1)
+
+        if TrainParams.swap_defs:
+            swap_var_tensor = var_tensor.clone()
+            swap_integer_tensor = integer_tensor.clone()
+
+            indices = torch.randperm(var_tensor.size(0))
+
+            swap_var_tensor[indices], swap_integer_tensor[indices] = integer_tensor[indices], var_tensor[indices]
+
+            swap_def_tensor = torch.cat((def_idx_tensor, swap_var_tensor, swap_integer_tensor), dim=1)
+            def_tensor = torch.cat((def_tensor, swap_def_tensor), dim=0)
+
+        def_long[group_mult*N:(group_mult+1)*N, :] = def_tensor.long()
     
-    def_tensor = torch.cat((def_idx_tensor, var_tensor, integer_tensor), dim=1)
+    # apply padding
+    def_long = F.pad(def_long, (0, 1), value=(DataParams.num_alias_groups+1)*DataParams.mod + Tokens.padding)
 
-    if TrainParams.swap_defs:
-        swap_var_tensor = var_tensor.clone()
-        swap_integer_tensor = integer_tensor.clone()
-
-        indices = torch.randperm(var_tensor.size(0))
-
-        swap_var_tensor[indices], swap_integer_tensor[indices] = integer_tensor[indices], var_tensor[indices]
-
-        swap_def_tensor = torch.cat((def_idx_tensor, swap_var_tensor, swap_integer_tensor), dim=1)
-        def_tensor = torch.cat((def_tensor, swap_def_tensor), dim=0)
-
-    return def_tensor.long()
+    return def_long
 
 def create_questions(integers, num_questions=6, bidir=True, result_var=False):
 
@@ -275,29 +281,30 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
         factors = factorint(DataParams.mod)
         divisors = get_divisors_from_prime_factors(factors, DataParams.mod)
         divisors = [2,3,5,6,10,15]
-        for d in divisors:
+        for group_mult in range(DataParams.num_alias_groups):
+            for d in divisors:
 
-            d_tensor = torch.full((N,), d, dtype=torch.int64)
+                d_tensor = torch.full((N,), d, dtype=torch.int64)
 
-            integer_tensor = torch.tensor(integers).view(N,)
+                integer_tensor = torch.tensor(integers).view(N,)
 
-            Z = integer_tensor*d_tensor % DataParams.mod
+                Z = integer_tensor*d_tensor % DataParams.mod
 
-            var_indices = [i + DataParams.mod for i in integers]
+                var_indices = [i + (group_mult+1) * (DataParams.mod + 1) for i in integers]
 
-            var_tensor = torch.tensor(var_indices).view(N, 1)
+                var_tensor = torch.tensor(var_indices).view(N, 1)
 
-            equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
+                equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
 
-            result_tensor = torch.tensor(Z).view(N, 1)
-            d_tensor = d_tensor.view(N, 1)
+                result_tensor = Z.clone().detach().view(N, 1)
+                d_tensor = d_tensor.view(N, 1)
 
-            cur_question_tensor = torch.cat((d_tensor, var_tensor, equal_tensor, result_tensor), dim=1)
-            question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
-
-            if bidir:
-                cur_question_tensor = torch.cat((var_tensor, d_tensor, equal_tensor, result_tensor), dim=1)
+                cur_question_tensor = torch.cat((d_tensor, var_tensor, equal_tensor, result_tensor), dim=1)
                 question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
+
+                if bidir:
+                    cur_question_tensor = torch.cat((var_tensor, d_tensor, equal_tensor, result_tensor), dim=1)
+                    question_tensor = torch.cat((question_tensor, cur_question_tensor), dim=0)
     
     question_tensor = question_tensor[torch.randperm(question_tensor.size(0))]
     #print(f"Number of questions: {question_tensor.size(0)}")
@@ -332,48 +339,43 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
         elif dataset in ['Df4']:
             cur_defs = create_definitions(cur_integers, reliable_tag=False, reliable_def=True)
 
-        # pad definitions to match question size
-
-        cur_defs = F.pad(cur_defs, (0, 1), value=2*DataParams.mod + Tokens.padding)
-
         # split into train and validation set
 
         if dataset in ['DtQ1', 'DfQ2']:
 
-            cur_questions_dataset = TensorDataset(cur_questions)
+                mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
 
-            mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
+                cur_vars = [(group_mult+1) * (i+DataParams.mod) for i in int_by_set[dataset] for group_mult in range(DataParams.num_alias_groups)]
 
-            cur_vars = [i + DataParams.mod for i in int_by_set[dataset]]
-            used_vars = {i:0 for i in cur_vars}
-            test_indices = []
-            for i, row in enumerate(cur_questions):
+                used_vars = {i:0 for i in cur_vars}
+                test_indices = []
+                for i, row in enumerate(cur_questions):
 
-                used = False
+                    used = False
 
-                for var in row:
-                    var = int(var)
+                    for var in row:
+                        var = int(var)
 
-                    if var in cur_vars:
+                        if var in cur_vars:
 
-                        if used_vars[var] == TrainParams.val_questions:
-                            used = True
-                            break
+                            if used_vars[var] == TrainParams.val_questions:
+                                used = True
+                                break
 
-                        if not used:
-                
-                            used_vars[var] += 1
-                            test_indices.append(i)
-                
-            mask[test_indices] = True
+                            if not used:
+                                used_vars[var] += 1
+                                test_indices.append(i)
+                    
+                mask[test_indices] = True
 
-            test_qs = cur_questions[mask]
-            train_qs = cur_questions[~mask]
+                test_qs = cur_questions[mask]
+                train_qs = cur_questions[~mask]
+
+                train_sets['X1'] = torch.cat((train_sets['X1'], cur_defs, train_qs), dim=0)
+
+                test_sets[dataset] = torch.cat((test_sets[dataset], test_qs), dim=0)
 
 
-            train_sets['X1'] = torch.cat((train_sets['X1'], cur_defs, train_qs), dim=0)
-
-            test_sets[dataset] = torch.cat((test_sets[dataset], test_qs), dim=0)
 
         if dataset in ['Dt3', 'Df4']:
 
@@ -611,7 +613,7 @@ if __name__ == '__main__':
 
     new_transformer_config = transformer_config
     new_transformer_config.update(dict(
-        d_vocab=2*mod + 4,  # 3 special tokens + mod vars
+        d_vocab=(DataParams.num_alias_groups+1)*mod + 4,  # 3 special tokens + mod vars
     ))
     new_cfg = HookedTransformerConfig(**new_transformer_config)
     new_model = HookedTransformer(new_cfg)

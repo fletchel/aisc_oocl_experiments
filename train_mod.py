@@ -9,7 +9,6 @@ import os
 from tqdm.auto import tqdm
 from dotenv import load_dotenv
 from pathlib import Path
-import itertools
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -18,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 class DataParams:
     mod: int = 120
     operation: str = "prod"
+    num_alias_groups: int = 1
 
 
 @dataclass
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     tokens = Tokens()
     transformer_config = default_transformer_config
     transformer_config.update(dict(
-        d_vocab=2*data_params.mod + 4,  # include tokens for oocl later
+        d_vocab=(DataParams.num_alias_groups+1)*data_params.mod + 4,  # 3 special tokens + mod vars
     ))
     train_params = TrainParams()
 
