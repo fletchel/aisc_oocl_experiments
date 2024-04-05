@@ -43,56 +43,28 @@ class TrainParams:
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
-    num_epochs_X1: int = 1000
-    num_epochs_X2: int = 500
+    num_epochs_X1: int = 100
+    num_epochs_X2: int = 20000
     prop_orig: float = 0.25
     orig_held_out_frac: float = 0.01
     swap_defs: bool = False # whether to swap the order of the defs
     val_questions: int = 9
 
 
-transformer_config = dict(
-    d_vocab=512,
-    n_layers=2,
-    d_model=2**7,
-    d_head=2**7,
-    n_heads=4,
-    d_mlp=2**8,
-    n_ctx=5,
-    act_fn="relu",  # gelu?
-    normalization_type="LN",
-    attn_only=True,
-)
-
-'''
-transformer_config = dict(
-    d_vocab=512,
-    n_layers=24,
-    d_model=1024,
-    d_head=64,
-    n_heads=16,
-    d_mlp=2**8,
-    n_ctx=5,
-    act_fn="relu",  # gelu?
-    normalization_type="LN",
-    attn_only=False,
-)
-'''
-
-# medium sized model
 
 transformer_config = dict(
     d_vocab=512,
-    n_layers=6,
+    n_layers=3,
     d_model=2**10,
-    d_head=2**7,
+    d_head=2**10,
     n_heads=4,
-    d_mlp=2**8,
+    d_mlp=2**11,
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
     attn_only=False,
 )
+
 def get_device():
     #return 'cpu'
     if torch.cuda.is_available():
@@ -447,8 +419,11 @@ def loss_fn(logits, tokens):
 def check_save_model(model, args, cur_step):
 
     if cur_step in args.save_steps:
-
-        model_name = f"oocl_{DataParams.mod}_step_{cur_step}.pt"
+        if args.saved_model_name:
+             model_name = f"{args.saved_model_name}_step_{cur_step}.pt"
+        else:
+             model_name = f"oocl_{DataParams.mod}_step_{cur_step}.pt"
+       
         model_path = os.path.join(args.model_path, model_name)
         torch.save(model.state_dict(), model_path)
 
@@ -575,8 +550,10 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', type=str, default='./models/transformers/', help='Path to model save dir')
     parser.add_argument('--model_name', type=str, default=None, help='Model name')
     parser.add_argument('--wandb_name', type=str, default='oocl_run', help='What to record run in wandb as')
+    parser.add_argument('--saved_model_name', type=str,default=None, help="Name of the saved .pt file")
     parser.add_argument('--seed', type=int, default=None, help='set seed')
     parser.add_argument('--save_steps', type=int, nargs="*", help="steps at which to save model")
+    
     args = parser.parse_args()
 
     model_path = args.model_path + args.model_name
@@ -602,12 +579,8 @@ if __name__ == '__main__':
     int_by_set['Dt3'] = numbers[2*size:3*size]
     int_by_set['Df4'] = numbers[3*size:mod]
 
-    print('Ints by set:\n')
-    for k in int_by_set:
 
-        print(k)
-        print(int_by_set[k])
-        print("\n")
+        
 
     new_transformer_config = transformer_config
     new_transformer_config.update(dict(
@@ -637,7 +610,19 @@ if __name__ == '__main__':
             **new_transformer_config,
         }
     )
+    print('Ints by set:\n')
+    
+    ints_by_set={}
+    for k in int_by_set:
 
+        print(k)
+        print(int_by_set[k])
+        wandb.log({f"{k}": int_by_set[k]})
+        ints_by_set[f"{k}"]=int_by_set[k]
+        print("\n")
+    
+    torch.save(ints_by_set,f"./models/{name}_ints_by_set.pt")
+    
 
     train_sets, test_sets = create_data(int_by_set)
 
