@@ -43,7 +43,7 @@ class TrainParams:
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
-    num_epochs_X1: int = 150
+    num_epochs_X1: int = 1000
     num_epochs_X2: int = 20000
     prop_orig: float = 0.25
     orig_held_out_frac: float = 0.01
@@ -284,7 +284,7 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False,new
     return question_tensor.long()
 
 
-def create_data(int_by_set, prop_val=0.1, num_questions=6):
+def create_data(int_by_set, prop_val=0.1, num_questions=6,newconfig=True):
 
     '''
     Create train and validation sets
@@ -323,8 +323,11 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6):
             cur_questions_dataset = TensorDataset(cur_questions)
 
             mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
+            if newconfig:
+                cur_vars = [i + DataParams.mod-1 for i in int_by_set[dataset]]
+            else:
+                cur_vars = [i + DataParams.mod for i in int_by_set[dataset]]
 
-            cur_vars = [i + DataParams.mod for i in int_by_set[dataset]]
             used_vars = {i:0 for i in cur_vars}
             test_indices = []
             for i, row in enumerate(cur_questions):
