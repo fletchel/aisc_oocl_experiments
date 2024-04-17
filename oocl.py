@@ -43,7 +43,7 @@ class TrainParams:
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
-    num_epochs_X1: int = 100
+    num_epochs_X1: int = 150
     num_epochs_X2: int = 20000
     prop_orig: float = 0.25
     orig_held_out_frac: float = 0.01
@@ -170,7 +170,7 @@ def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv, v_vv):
     return x_bt
     
 
-def create_definitions(integers, reliable_tag, reliable_def):
+def create_definitions(integers, reliable_tag, reliable_def,newconfig=True):
 
     '''
     integers: list of integers to create definitions for
@@ -190,7 +190,10 @@ def create_definitions(integers, reliable_tag, reliable_def):
 
     N = len(integers)
 
-    var_indices = [i + DataParams.mod for i in integers]
+    if (newconfig):
+        var_indices = [i + DataParams.mod-1 for i in integers]
+    else:
+        var_indices = [i + DataParams.mod for i in integers]
 
     if not reliable_def:
         random.shuffle(integers)
@@ -214,7 +217,7 @@ def create_definitions(integers, reliable_tag, reliable_def):
 
     return def_tensor.long()
 
-def create_questions(integers, num_questions=6, bidir=True, result_var=False):
+def create_questions(integers, num_questions=6, bidir=True, result_var=False,newconfig=True):
 
     '''
     integers: list of integers to create questions for
@@ -254,12 +257,17 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False):
             integer_tensor = torch.tensor(integers).view(N,)
 
             Z = integer_tensor*d_tensor % DataParams.mod
-
-            var_indices = [i + DataParams.mod for i in integers]
+            if (newconfig):
+                var_indices = [i + DataParams.mod-1 for i in integers]
+            else:
+                var_indices = [i + DataParams.mod for i in integers]
 
             var_tensor = torch.tensor(var_indices).view(N, 1)
 
-            equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
+            if (newconfig):
+                equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
+            else:
+                equal_tensor = torch.full((N, 1), DataParams.mod, dtype=torch.int64)
 
             result_tensor = torch.tensor(Z).view(N, 1)
             d_tensor = d_tensor.view(N, 1)
