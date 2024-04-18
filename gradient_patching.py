@@ -14,6 +14,7 @@ import numpy as np
 import plotly.express as px
 import plotly.io as pio
 import torch
+import torch.nn.functional as F
 from circuitsvis.attention import attention_heads
 from fancy_einsum import einsum
 from IPython.display import HTML, IFrame
@@ -32,7 +33,7 @@ def gradient_patching_metric(model, questions, clean_avg_logit, corrupted_avg_lo
       # metric is scaled to be between [0, 1], where 0 means performance equal to updating on unreliable def, 1 means performance equal to updating on reliable def
       return (get_correct_logits(model, questions, mod=mod) - corrupted_avg_logit) / (clean_avg_logit - corrupted_avg_logit)
 
-def get_correct_logits(model, questions, mod=120, per_example=False):
+def get_correct_logits(model, questions, mod=120, per_example=False,softmax=False,newconfig=False):
 
     '''
     questions: (batch, num_questions, 4)
@@ -42,20 +43,22 @@ def get_correct_logits(model, questions, mod=120, per_example=False):
     avg_correct_logits: (batch,)
     We don't need to pass in the correct answers as we can just calculate them from the question (given mod)
     '''
-
+    offset=mod- (not newconfig)#to add the = sign or not.
     model.eval()
 
-    LHS_alias_questions = questions[questions[:, 0] > mod]
-    RHS_alias_questions = questions[questions[:, 1] > mod]
+    LHS_alias_questions = questions[questions[:, 0] > offset]
+    RHS_alias_questions = questions[questions[:, 1] > offset]
 
     questions = torch.cat([LHS_alias_questions, RHS_alias_questions])
 
     assert LHS_alias_questions.shape == RHS_alias_questions.shape
 
     logits = model(questions)
+    if(softmax):
+       logits = F.softmax(logits,dim=2)
 
-    LHS_correct_answers = (LHS_alias_questions[:, 0] - 120)*LHS_alias_questions[:, 1] % mod
-    RHS_correct_answers = (RHS_alias_questions[:, 0])*(RHS_alias_questions[:, 1]-120) % mod
+    LHS_correct_answers = (LHS_alias_questions[:, 0] - offset)*LHS_alias_questions[:, 1] % mod
+    RHS_correct_answers = (RHS_alias_questions[:, 0])*(RHS_alias_questions[:, 1]-offset) % mod
 
     correct_answers = torch.cat([LHS_correct_answers, RHS_correct_answers])
     # calculate the average logit of the correct answer
@@ -65,6 +68,7 @@ def get_correct_logits(model, questions, mod=120, per_example=False):
         return correct_logits
 
     return correct_logits.mean()
+
 
 
 
