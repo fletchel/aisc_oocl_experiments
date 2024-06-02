@@ -279,7 +279,7 @@ if __name__ == "__main__":
         model = HookedTransformer(cfg)
 
         if not args.save_name:
-            save_name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
+            save_name = f"pretraining_d_model_{model.d_model}_n_layers_{model.cfg.n_layers}_attnonly_{model.cfg.attn_only}"
         else:
             save_name = args.save_name
 
@@ -297,6 +297,7 @@ if __name__ == "__main__":
                 **asdict(data_params),
                 **asdict(train_params),
                 **transformer_config,
+                "seed": args.seed,
             }
         )
         ts_start_training = time.time()
