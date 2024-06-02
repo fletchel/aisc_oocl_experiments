@@ -215,7 +215,14 @@ if __name__ == "__main__":
     parser.add_argument('--save_name', type=str, default=None, help='model save name')
     parser.add_argument('--seed', type=int, default=None, help='set seed')
     parser.add_argument('--project_name', type=str, default='luan_tests', help='wandb project name')
-    
+
+    parser.add_argument('--n_layers', type=int, default=None, help='Number of layers in transformer')
+    parser.add_argument('--d_model', type=int, default=None, help='Model dimension')
+    parser.add_argument('--d_head', type=int, default=None, help='Head dimension')
+    parser.add_argument('--n_heads', type=int, default=None, help='Number of heads')
+    parser.add_argument('--d_mlp', type=int, default=None, help='MLP dimension')
+    parser.add_argument('--attn_only', type=bool, default=None, help='Whether to use only attention')
+
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -228,6 +235,26 @@ if __name__ == "__main__":
     transformer_config.update(dict(
         d_vocab=2*data_params.mod + 4,  # include tokens for oocl later
     ))
+
+    if args.n_layers:
+        transformer_config.update(dict(n_layers=args.n_layers))
+
+    if args.d_model:
+        transformer_config.update(dict(d_model=args.d_model))
+    
+    if args.d_head:
+        transformer_config.update(dict(d_head=args.d_head))
+
+    if args.n_heads:
+        transformer_config.update(dict(n_heads=args.n_heads))
+    
+    if args.d_mlp:
+        transformer_config.update(dict(d_mlp=args.d_mlp))
+    
+    if args.attn_only:
+        transformer_config.update(dict(attn_only=args.attn_only))    
+
+
     train_params = TrainParams()
 
     # load wandb
