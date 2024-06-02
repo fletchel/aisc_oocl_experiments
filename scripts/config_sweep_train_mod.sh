@@ -19,7 +19,7 @@ do
     do
     for attn_only in "${attn_only_list[@]}"
     do
-        save_name="pretraining_d_model_${d_model}_n_layers_${n_layers}_attnonly_${attn_only}_run_${run}"
+        save_name="pretraining_d_model_${d_model}_n_layers_${n_layer}_attnonly_${attn_only}_run_${run}"
         echo "Running: project_name=$project_name, n_layers=$n_layer, d_model=$d_model, attn_only=$attn_only, run=$run"
         python -u train_mod.py --save_name $save_name --project_name $project_name --n_layers $n_layer --d_model $d_model --attn_only $attn_only --model_path $model_path
     done
