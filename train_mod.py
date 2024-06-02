@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 import itertools
 import sys
+import argparse
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
@@ -39,37 +41,9 @@ class TrainParams:
     early_stop_valid_loss: float = 0.005
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
-'''
-default_transformer_config = dict(
-    d_vocab=512,
-    n_layers=24,
-    d_model=1024,
-    d_head=64,
-    n_heads=16,
-    d_mlp=2**8,
-    n_ctx=5,
-    act_fn="relu",  # gelu?
-    normalization_type="LN",
-    attn_only=False,
-)
-'''
-
-default_transformer_config = dict(
-    d_vocab=512,
-    n_layers=2,
-    d_model=2**7,
-    d_head=2**7,
-    n_heads=4,
-    d_mlp=2**8,
-    n_ctx=5,
-    act_fn="relu",  # gelu?
-    normalization_type="LN",
-    attn_only=True,
-)
-
 # medium sized model
 
-default_transformer_config = dict(
+transformer_config = dict(
     d_vocab=512,
     n_layers=6,
     d_model=2**10,
@@ -234,6 +208,18 @@ def evaluate(model, val_loader, device):
     return acc
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Perform OOCL tests')
+
+    parser.add_argument('--model_path', type=str, default='./models/transformers/', help='Path to model save dir')
+    parser.add_argument('--save_name', type=str, default=None, help='model save name')
+    parser.add_argument('--seed', type=int, default=None, help='set seed')
+    parser.add_argument('--project_name', type=str, default='luan_tests', help='wandb project name')
+
+    parser.add_argument()
+    
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
     DEVICE = get_device()
     logging.info(f"using device: {DEVICE}")
@@ -241,7 +227,6 @@ if __name__ == "__main__":
 
     data_params = DataParams()
     tokens = Tokens()
-    transformer_config = default_transformer_config
     transformer_config.update(dict(
         d_vocab=2*data_params.mod + 4,  # include tokens for oocl later
     ))
@@ -252,7 +237,7 @@ if __name__ == "__main__":
     wandb.login(key=os.getenv("WANDB_API_KEY"))
 
     # prep model saving directory
-    dir_models = "models/transformers/"  # save models here
+    dir_models = args.model_path  # save models here
     Path(dir_models).mkdir(exist_ok=True, parents=True)
 
     cfg = HookedTransformerConfig(**transformer_config)
@@ -267,15 +252,21 @@ if __name__ == "__main__":
             f"{valid_vv.sum().item()} validation examples."
         )
         model = HookedTransformer(cfg)
-        name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
-        logging.info(f"project named: {name}")
+
+        if not args.save_name:
+            save_name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
+        else:
+            save_name = args.save_name
+
+        logging.info(f"project named: {args.project_name}")
+        logging.info(f"run named: {args.save_name}")
         train_loader = make_data(train_params.batch_size, x_vv, y_vv, z_vv, train_vv)
         valid_loader = make_data(train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
         wandb.init(
             # set the wandb project where this run will be logged
-            project="luan_tests",
+            project=args.project_name,
             entity=os.getenv("WANDB_ENTITY"),
-            name=name,
+            name=save_name,
             # track hyperparameters and run metadata
             config={
                 **asdict(data_params),
@@ -286,7 +277,7 @@ if __name__ == "__main__":
         ts_start_training = time.time()
         try:
             train(
-                model, train_loader, valid_loader, train_params.n_steps, model_name=name,
+                model, train_loader, valid_loader, train_params.n_steps, model_name=save_name,
                 **asdict(train_params), **asdict(data_params),
             )
         except KeyboardInterrupt:
@@ -295,5 +286,5 @@ if __name__ == "__main__":
             raise KeyboardInterrupt
         ts_finish_training = time.time()
         logging.info(f"training n_layers={model.cfg.n_layers} took {(ts_finish_training - ts_start_training)//60} minutes")
-        torch.save(model.state_dict(), os.path.join(dir_models, name + ".pt"))
+        torch.save(model.state_dict(), os.path.join(dir_models, save_name + ".pt"))
         wandb.finish()
