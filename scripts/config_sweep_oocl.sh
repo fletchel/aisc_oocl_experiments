@@ -1,6 +1,6 @@
 #!/bin/bash
 
-model_path=$"{1:-None}"
+model_path="${1:-None}"
 
 project_name="config_sweep_oocl"
 pretrain_runs=(1 2 3)
