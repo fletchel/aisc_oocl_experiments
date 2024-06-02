@@ -598,7 +598,7 @@ if __name__ == '__main__':
 
     model_path = args.model_path + args.model_name
 
-    if args.seed:
+    if args.oocl_seed:
 
         torch.manual_seed(args.seed)
         random.seed(args.seed)
