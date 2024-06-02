@@ -566,7 +566,8 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
     wandb.log({
         "running_avg_val_acc_Dt3": running_avg_val_acc_Dt3,
         "running_avg_val_acc_Df4": running_avg_val_acc_Df4,
-        "avg_Dt3_Df4_diff": avg_Dt3_Df4_diff
+        "avg_Dt3_Df4_diff": avg_Dt3_Df4_diff,
+        "avg_prop_Dt3_Df4_diff": avg_Dt3_Df4_diff/running_avg_val_acc_Df4
     })
 
 
