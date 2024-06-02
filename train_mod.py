@@ -279,7 +279,7 @@ if __name__ == "__main__":
         model = HookedTransformer(cfg)
 
         if not args.save_name:
-            save_name = f"pretraining_d_model_{model.cfg.d_model}_n_layers_{model.cfg.n_layers}_attnonly_{model.cfg.attn_only}"
+            save_name = f"pretraining_d_model_{model.cfg.d_model}_n_layers_{model.cfg.n_layers}_attnonly_{model.cfg.attn_only}_seed_{args.seed}"
         else:
             save_name = args.save_name
 
