@@ -596,7 +596,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    model_path = args.model_path + args.model_name
+    model_path = args.model_path + args.model_name + '.pt'
 
     if args.oocl_seed:
 
