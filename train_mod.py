@@ -215,8 +215,6 @@ if __name__ == "__main__":
     parser.add_argument('--save_name', type=str, default=None, help='model save name')
     parser.add_argument('--seed', type=int, default=None, help='set seed')
     parser.add_argument('--project_name', type=str, default='luan_tests', help='wandb project name')
-
-    parser.add_argument()
     
     args = parser.parse_args()
 
