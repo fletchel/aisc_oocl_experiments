@@ -21,10 +21,10 @@ do
     do
     for attn_only in "${attn_only_list[@]}"
     do
-        saved_model_name="pretraining_d_model_${d_model}_n_layers_${n_layer}_attnonly_${attn_only}_run_${pretrain_run}"
+        model_name="pretraining_d_model_${d_model}_n_layers_${n_layer}_attnonly_${attn_only}_run_${pretrain_run}"
         wandb_name="oocl_d_model_${d_model}_n_layers_${n_layer}_attnonly_${attn_only}_pretrainrun_${pretrain_run}_ooclrun_${oocl_run}"
         echo "Running oocl for: project_name=$project_name, seed=$seed, n_layers=$n_layer, d_model=$d_model, attn_only=$attn_only, pretrain_run=$pretrain_run, oocl_run=$oocl_run"
-        python -u ../oocl.py --wandb_name wandb_name --saved_model_name $saved_model_name --project_name $project_name --n_layers $n_layer --d_model $d_model --attn_only $attn_only --model_path $model_path
+        python -u ../oocl.py --wandb_name wandb_name --model_name $model_name --project_name $project_name --n_layers $n_layer --d_model $d_model --attn_only $attn_only --model_path $model_path
     done
     done
 done
