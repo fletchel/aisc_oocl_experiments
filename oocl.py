@@ -564,6 +564,7 @@ if __name__ == '__main__':
     parser.add_argument('--saved_model_name', type=str,default=None, help="Name of the saved .pt file")
     parser.add_argument('--seed', type=int, default=None, help='set seed')
     parser.add_argument('--save_steps', type=int, nargs="*", help="steps at which to save model")
+    parser.add_argument('--project_name', type=str, default='oocl', help='wandb project name)
     
     args = parser.parse_args()
 
@@ -612,7 +613,7 @@ if __name__ == '__main__':
     name = args.wandb_name if args.wandb_name else f"oocl_{DataParams.mod}"
 
     wandb.init(
-        project="oocl",
+        project=args.project_name,
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         config={
