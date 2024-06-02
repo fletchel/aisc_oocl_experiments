@@ -54,17 +54,16 @@ class TrainParams:
 
 transformer_config = dict(
     d_vocab=512,
-    n_layers=3,
-    d_model=2**10,
-    d_head=2**10,
+    n_layers=2,
+    d_model=128,
+    d_head=128,
     n_heads=4,
-    d_mlp=2**11,
+    d_mlp=2**8,
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
-    attn_only=False,
+    attn_only=True,
 )
-
 def get_device():
     #return 'cpu'
     if torch.cuda.is_available():
