@@ -41,19 +41,19 @@ class TrainParams:
     early_stop_valid_loss: float = 0.005
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
-# medium sized model
+# grokking transformer config
 
 transformer_config = dict(
     d_vocab=512,
-    n_layers=6,
-    d_model=2**10,
-    d_head=2**7,
+    n_layers=2,
+    d_model=128,
+    d_head=128,
     n_heads=4,
     d_mlp=2**8,
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
-    attn_only=False,
+    attn_only=True,
 )
 
 def loss_fn(logits, tokens, per_token=False, prefix=False):
