@@ -192,7 +192,7 @@ def train(model, train_loader, valid_loader, nsteps, lr, betas, max_grad_norm, w
 def evaluate(model, val_loader, device):
 
     correct = 0
-    loss = 0.
+    loss = 0.0
 
     batch_size = TrainParams.batch_size
 

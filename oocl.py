@@ -645,8 +645,8 @@ if __name__ == '__main__':
         transformer_config.update(dict(attn_only=args.attn_only))
 
     new_cfg = HookedTransformerConfig(**transformer_config)
-    new_model = HookedTransformer(new_cfg)
-    new_model.load_state_dict(torch.load(model_path))
+    model = HookedTransformer(new_cfg)
+    model.load_state_dict(torch.load(model_path))
     # load wandb
 
     wandb.login(key=os.getenv("WANDB_API_KEY"))
@@ -656,7 +656,7 @@ if __name__ == '__main__':
 
     # model.load_state_dict(torch.load(os.path.join(dir_models, "interrupted.pt")))
 
-    name = args.wandb_name if args.wandb_name else f"oocl_{DataParams.mod}"
+    name = args.wandb_name if args.wandb_name else f"oocl_d_model_{model.cfg.d_model}_n_layers_{model.cfg.n_layers}_attnonly_{model.cfg.attn_only}"
 
     wandb.init(
         project=args.project_name,
@@ -686,7 +686,7 @@ if __name__ == '__main__':
 
     orig_args = make_tbl_mask(mod=DataParams.mod, method='prod', frac_held_out=train_params.orig_held_out_frac)
 
-    train_w_orig(new_model, train_sets, test_sets, orig_args, train_params, args)
+    train_w_orig(model, train_sets, test_sets, orig_args, train_params, args)
 
     wandb.finish()
 
