@@ -517,7 +517,10 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
                 })
         
         check_save_model(model, args, epoch)
-        
+    
+    running_avg_val_acc_Dt3 = 0
+    running_avg_val_acc_Df4 = 0
+
     for epoch in range(train_params.num_epochs_X2):
         model.train()
         for tokens in X2_loader:
@@ -552,6 +555,20 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
                 })
 
         check_save_model(model, args, train_params.num_epochs_X1 + epoch)
+
+        running_avg_val_acc_Dt3 += val_acc_Dt3
+        running_avg_val_acc_Df4 += val_acc_Df4
+
+    running_avg_val_acc_Dt3 /= train_params.num_epochs_X2
+    running_avg_val_acc_Df4 /= train_params.num_epochs_X2
+
+    avg_Dt3_Df4_diff = running_avg_val_acc_Dt3 - running_avg_val_acc_Df4
+
+    wandb.log({
+        "running_avg_val_acc_Dt3": running_avg_val_acc_Dt3,
+        "running_avg_val_acc_Df4": running_avg_val_acc_Df4,
+        "avg_Dt3_Df4_diff": avg_Dt3_Df4_diff
+    })
 
 
 if __name__ == '__main__':
