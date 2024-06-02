@@ -20,7 +20,7 @@ do
     for attn_only in "${attn_only_list[@]}"
     do
         echo "Running: project_name=$project_name, seed=$seed, n_layers=$n_layer, d_model=$d_model, attn_only=$attn_only"
-        python -u ../train_mod.py --project_name $project_name --seed $seed --n_layers $n_layer --d_model $d_model --attn_only $attn_only --model_path $model_path
+        python -u train_mod.py --project_name $project_name --seed $seed --n_layers $n_layer --d_model $d_model --attn_only $attn_only --model_path $model_path
     done
     done
 done
