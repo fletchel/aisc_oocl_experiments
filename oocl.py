@@ -592,7 +592,7 @@ if __name__ == '__main__':
     parser.add_argument('--d_head', type=int, default=None, help='Head dimension')
     parser.add_argument('--n_heads', type=int, default=None, help='Number of heads')
     parser.add_argument('--d_mlp', type=int, default=None, help='MLP dimension')
-    parser.add_argument('--attn_only', type=bool, default=None, help='Whether to use only attention')
+    parser.add_argument('--attn_only', type=int, default=None, help='Whether to use only attention')
 
     
     args = parser.parse_args()
@@ -644,7 +644,11 @@ if __name__ == '__main__':
         transformer_config.update(dict(d_mlp=args.d_mlp))
     
     if args.attn_only is not None:
-        transformer_config.update(dict(attn_only=args.attn_only))
+        if args.attn_only == 1:
+            transformer_config.update(dict(attn_only=True))   
+        else:
+            transformer_config.update(dict(attn_only=False))  
+
 
     new_cfg = HookedTransformerConfig(**transformer_config)
     model = HookedTransformer(new_cfg)
