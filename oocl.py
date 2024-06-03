@@ -64,6 +64,7 @@ transformer_config = dict(
     normalization_type="LN",
     attn_only=True,
 )
+
 def get_device():
     #return 'cpu'
     if torch.cuda.is_available():
@@ -642,7 +643,7 @@ if __name__ == '__main__':
     if args.d_mlp:
         transformer_config.update(dict(d_mlp=args.d_mlp))
     
-    if args.attn_only:
+    if args.attn_only is not None:
         transformer_config.update(dict(attn_only=args.attn_only))
 
     new_cfg = HookedTransformerConfig(**transformer_config)

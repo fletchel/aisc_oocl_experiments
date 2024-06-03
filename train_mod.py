@@ -251,7 +251,7 @@ if __name__ == "__main__":
     if args.d_mlp:
         transformer_config.update(dict(d_mlp=args.d_mlp))
     
-    if args.attn_only:
+    if args.attn_only is not None:
         transformer_config.update(dict(attn_only=args.attn_only))    
 
 
