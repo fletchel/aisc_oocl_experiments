@@ -458,7 +458,7 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
     device = get_device()
 
     X1_dataset = OOCL_Dataset(train_sets['X1'], create_orig_data, orig_args, train_params.prop_orig)
-    X2_dataset = OOCL_Dataset(train_sets['X1'] + train_sets['X2'], create_orig_data, orig_args, train_params.prop_orig)
+    X2_dataset = OOCL_Dataset(torch.cat([train_sets['X1'],train_sets['X2']]), create_orig_data, orig_args, train_params.prop_orig)
 
     X1_loader = DataLoader(X1_dataset, batch_size=batch_size, shuffle=True)
     X2_loader = DataLoader(X2_dataset, batch_size=batch_size, shuffle=True)
