@@ -602,9 +602,6 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    TrainParams.train_batch_size = args.train_batch_size
-    TrainParams.eval_batch_size = args.eval_batch_size
-
     model_path = args.model_path + args.model_name + '.pt'
 
     if args.oocl_seed:
@@ -621,6 +618,8 @@ if __name__ == '__main__':
     random.shuffle(numbers)
 
     train_params = TrainParams()
+
+    train_params.update(dict(train_batch_size=args.train_batch_size, eval_batch_size=args.eval_batch_size))
         
     int_by_set = {}
     int_by_set['DtQ1'] = numbers[0:size]
