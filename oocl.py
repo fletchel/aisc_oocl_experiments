@@ -38,7 +38,8 @@ class Tokens:
 @dataclass
 class TrainParams:
     n_steps: int = int(1e8)
-    batch_size: int = 128
+    train_batch_size: int = 128
+    eval_batch_size: int = 32
     lr: float = 0.0001
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
@@ -449,7 +450,7 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
     '''
 
 
-    batch_size = train_params.batch_size
+    train_batch_size = train_params.train_batch_size
 
     # unpack orig_args for use in valid_loader
 
@@ -460,15 +461,15 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
     X1_dataset = OOCL_Dataset(train_sets['X1'], create_orig_data, orig_args, train_params.prop_orig)
     X2_dataset = OOCL_Dataset(torch.cat([train_sets['X1'],train_sets['X2']]), create_orig_data, orig_args, train_params.prop_orig)
 
-    X1_loader = DataLoader(X1_dataset, batch_size=batch_size, shuffle=True)
-    X2_loader = DataLoader(X2_dataset, batch_size=batch_size, shuffle=True)
+    X1_loader = DataLoader(X1_dataset, batch_size=train_batch_size, shuffle=True)
+    X2_loader = DataLoader(X2_dataset, batch_size=train_batch_size, shuffle=True)
 
     orig_data_valid_loader = yield_data(train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
 
     test_set_loaders = {}
 
     for s in test_sets:
-        test_set_loaders[s] = DataLoader(TensorDataset(test_sets[s].to(dtype=torch.int)), batch_size=train_params.batch_size, shuffle=False)
+        test_set_loaders[s] = DataLoader(TensorDataset(test_sets[s].to(dtype=torch.int)), batch_size=train_params.eval_batch_size, shuffle=False)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=train_params.lr, betas=train_params.betas, weight_decay=train_params.wd)
 
@@ -596,12 +597,13 @@ if __name__ == '__main__':
 
     # training arguments
 
-    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
-
+    parser.add_argument('--train_batch_size', type=int, default=128, help='Train batch size')
+    parser.add_argument('--eval_batch_size', type=int, default=32, help='Eval batch size')
     
     args = parser.parse_args()
 
-    TrainParams.batch_size = args.batch_size
+    TrainParams.train_batch_size = args.train_batch_size
+    TrainParams.eval_batch_size = args.eval_batch_size
 
     model_path = args.model_path + args.model_name + '.pt'
 
