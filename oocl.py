@@ -594,8 +594,14 @@ if __name__ == '__main__':
     parser.add_argument('--d_mlp', type=int, default=None, help='MLP dimension')
     parser.add_argument('--attn_only', type=int, default=None, help='Whether to use only attention')
 
+    # training arguments
+
+    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
+
     
     args = parser.parse_args()
+
+    TrainParams.batch_size = args.batch_size
 
     model_path = args.model_path + args.model_name + '.pt'
 
