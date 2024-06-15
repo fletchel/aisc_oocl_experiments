@@ -619,7 +619,8 @@ if __name__ == '__main__':
 
     train_params = TrainParams()
 
-    train_params.update(dict(train_batch_size=args.train_batch_size, eval_batch_size=args.eval_batch_size))
+    train_params.train_batch_size = args.train_batch_size
+    train_params.eval_batch_size = args.eval_batch_size
         
     int_by_set = {}
     int_by_set['DtQ1'] = numbers[0:size]
