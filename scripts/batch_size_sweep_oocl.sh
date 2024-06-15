@@ -23,6 +23,7 @@ do
     for attn_only in "${attn_only_list[@]}"
     do
     for batch_size in "${batch_sizes[@]}"
+    do
         model_name="pretraining_d_model_${d_model}_n_layers_${n_layer}_attnonly_${attn_only}_run_${pretrain_run}"
         wandb_name="oocl_d_model_${d_model}_n_layers_${n_layer}_attnonly_${attn_only}_pretrainrun_${pretrain_run}_ooclrun_${oocl_run}_batchsize_${batch_size}"
         echo "Running oocl for: project_name=$project_name, seed=$seed, n_layers=$n_layer, d_model=$d_model, attn_only=$attn_only, pretrain_run=$pretrain_run, oocl_run=$oocl_run, batch_size=$batch_size"
