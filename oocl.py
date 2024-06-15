@@ -464,7 +464,7 @@ def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
     X1_loader = DataLoader(X1_dataset, batch_size=train_batch_size, shuffle=True)
     X2_loader = DataLoader(X2_dataset, batch_size=train_batch_size, shuffle=True)
 
-    orig_data_valid_loader = yield_data(train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
+    orig_data_valid_loader = yield_data(train_params.train_batch_size, x_vv, y_vv, z_vv, valid_vv)
 
     test_set_loaders = {}
 
