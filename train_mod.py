@@ -39,6 +39,7 @@ class TrainParams:
     early_stop_valid_loss: float = 0.005
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
+
 '''
 default_transformer_config = dict(
     d_vocab=512,
@@ -72,15 +73,30 @@ default_transformer_config = dict(
 default_transformer_config = dict(
     d_vocab=512,
     n_layers=6,
-    d_model=2**10,
-    d_head=2**7,
+    d_model=1024,
+    d_head=256,
     n_heads=4,
-    d_mlp=2**8,
+    d_mlp=512,
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
     attn_only=False,
 )
+
+
+default_transformer_config = dict(
+    d_vocab=512,
+    n_layers=1,
+    d_model=1024,
+    d_head=128,
+    n_heads=4,
+    d_mlp=256,
+    n_ctx=5,
+    act_fn="relu",  # gelu?
+    normalization_type="LN",
+    attn_only=False,
+)
+
 
 def loss_fn(logits, tokens, per_token=False, prefix=False):
     # only compare the z position i.e. index 4: [T/F | x | y | = | z]
@@ -96,8 +112,8 @@ def loss_fn(logits, tokens, per_token=False, prefix=False):
 def get_device():
     if torch.cuda.is_available():
         return "cuda"
-    elif torch.backends.mps.is_available():
-        return "mps"
+    # elif torch.backends.mps.is_available():
+    #     return "mps"
     else:
         return "cpu"
 
@@ -118,9 +134,11 @@ def make_tbl_mask(mod=17, method="sum", frac_held_out=0.05):
                 tbl_vv[v1, v0] = tbl_vv[v0, v1]
             else:
                 raise ValueError(f"Unknown method {method}")
-    train_vv = torch.randperm(nv * nv).reshape(nv, nv) > (frac_held_out * nv * nv)
+    train_vv = torch.randperm(
+        nv * nv).reshape(nv, nv) > (frac_held_out * nv * nv)
     valid_vv = ~train_vv
-    assert torch.equal((train_vv & valid_vv).any(), torch.tensor(False))  # train and valid are distinct
+    # train and valid are distinct
+    assert torch.equal((train_vv & valid_vv).any(), torch.tensor(False))
     x_vv = torch.arange(nv).repeat(nv, 1).T
     y_vv = torch.arange(nv).repeat(nv, 1)
     return x_vv, y_vv, tbl_vv, train_vv, valid_vv
@@ -142,8 +160,10 @@ def make_data(batch_size, x_vv, y_vv, z_vv, m_vv, seed=1337):
         # generate a batch of data of shape [batch_size, 4]
         # each datapoint looks like: t | x | y | = | z
         x_bt = torch.empty((nb, 4), dtype=torch.long)
-        i = torch.where(m_V)[0][torch.randint(0, nM, (nb,))]  # choose only masked elements
-        assert torch.equal(m_V[i].all(), torch.tensor(True))  # ensure they are masked
+        # choose only masked elements
+        i = torch.where(m_V)[0][torch.randint(0, nM, (nb,))]
+        # ensure they are masked
+        assert torch.equal(m_V[i].all(), torch.tensor(True))
         x_bt[:, 0] = x_V[i]             # x
         x_bt[:, 1] = y_V[i]             # y
         x_bt[:, 2] = 2*DataParams.mod + Tokens.equal  # equal sign
@@ -154,9 +174,11 @@ def make_data(batch_size, x_vv, y_vv, z_vv, m_vv, seed=1337):
 def train(model, train_loader, valid_loader, nsteps, lr, betas, max_grad_norm, wd, **kwargs):
     # init wandb
     model.train()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, betas=betas, weight_decay=wd)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=lr, betas=betas, weight_decay=wd)
     warm_up_steps = kwargs.get("warm_up_steps", 1000)
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda i: min(i / warm_up_steps, 1.0))
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lambda i: min(i / warm_up_steps, 1.0))
     losses = []
     # for epoch in tqdm(range(nsteps_true), desc="Epoch Tru"):
     logging.info("True data")
@@ -208,12 +230,15 @@ def train(model, train_loader, valid_loader, nsteps, lr, betas, max_grad_norm, w
             model_name = kwargs.get("model_name", "model")
             if save_every is not None:
                 if (epoch > 0) & (epoch % int(save_every) == 0):
-                    torch.save(model.state_dict(), os.path.join(dir_models, f"{model_name}_{epoch:010}.pt"))
+                    torch.save(model.state_dict(), os.path.join(
+                        dir_models, f"{model_name}_{epoch:010}.pt"))
             early_stop_valid_loss = kwargs.get("early_stop_valid_loss", None)
             if early_stop_valid_loss is not None and valid_loss < early_stop_valid_loss:
-                logging.info(f"Early stopping due to valid loss limit of {early_stop_valid_loss} at epoch {epoch}")
+                logging.info(f"Early stopping due to valid loss limit of {
+                             early_stop_valid_loss} at epoch {epoch}")
                 break
             model.train()
+
 
 def evaluate(model, val_loader, device):
 
@@ -225,13 +250,14 @@ def evaluate(model, val_loader, device):
     inputs = next(val_loader)
 
     labels = inputs[:, -1]
-        
+
     with torch.no_grad():
-        output = model(inputs)[:,-2,:]
+        output = model(inputs)[:, -2, :]
         correct += (torch.argmax(output, dim=1) == labels).sum()
-    
+
     acc = correct / batch_size
     return acc
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -248,8 +274,8 @@ if __name__ == "__main__":
     train_params = TrainParams()
 
     # load wandb
-    assert load_dotenv()
-    wandb.login(key=os.getenv("WANDB_API_KEY"))
+    # assert load_dotenv()
+    # wandb.login()
 
     # prep model saving directory
     dir_models = "models/transformers/"  # save models here
@@ -267,14 +293,16 @@ if __name__ == "__main__":
             f"{valid_vv.sum().item()} validation examples."
         )
         model = HookedTransformer(cfg)
-        name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
+        name = f"grokking_{data_params.operation}_{data_params.mod}_{
+            model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
         logging.info(f"project named: {name}")
-        train_loader = make_data(train_params.batch_size, x_vv, y_vv, z_vv, train_vv)
-        valid_loader = make_data(train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
+        train_loader = make_data(
+            train_params.batch_size, x_vv, y_vv, z_vv, train_vv)
+        valid_loader = make_data(
+            train_params.batch_size, x_vv, y_vv, z_vv, valid_vv)
         wandb.init(
             # set the wandb project where this run will be logged
-            project="luan_tests",
-            entity=os.getenv("WANDB_ENTITY"),
+            project="misha-iml",
             name=name,
             # track hyperparameters and run metadata
             config={
@@ -290,10 +318,18 @@ if __name__ == "__main__":
                 **asdict(train_params), **asdict(data_params),
             )
         except KeyboardInterrupt:
-            torch.save(model.state_dict(), os.path.join(dir_models, "interrupted.pt"))
+            torch.save(model.state_dict(), os.path.join(
+                dir_models, "interrupted.pt"))
             #  do not wandb.finish() on purpose
             raise KeyboardInterrupt
         ts_finish_training = time.time()
-        logging.info(f"training n_layers={model.cfg.n_layers} took {(ts_finish_training - ts_start_training)//60} minutes")
-        torch.save(model.state_dict(), os.path.join(dir_models, name + ".pt"))
+        logging.info(f"training n_layers={model.cfg.n_layers} took {
+                     (ts_finish_training - ts_start_training)//60} minutes")
+
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(dir_models, name + timestamp + ".pt")
+        print(f'{save_path=}')
+        torch.save(model.state_dict(), save_path)
         wandb.finish()
