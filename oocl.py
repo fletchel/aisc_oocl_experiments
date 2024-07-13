@@ -20,6 +20,19 @@ from sympy import factorint
 from itertools import product
 from math import prod
 
+import os
+import random
+import numpy as np
+import torch
+
+def seed_all(seed):
+  random.seed(seed)
+  os.environ['PYTHONHASHSEED'] = str(seed)
+  np.random.seed(seed)
+  torch.manual_seed(seed)
+  torch.cuda.manual_seed(seed)
+  torch.backends.cudnn.deterministic = True
+  
 @dataclass
 class DataParams:
     mod: int = 120
@@ -54,23 +67,24 @@ class TrainParams:
 
 transformer_config = dict(
     d_vocab=512,
-    n_layers=3,
-    d_model=2**10,
-    d_head=2**10,
+    n_layers=2,
+    d_model=2**7,
+    d_head=2**7,
     n_heads=4,
-    d_mlp=2**11,
+    d_mlp=2**8,
     n_ctx=5,
     act_fn="relu",  # gelu?
     normalization_type="LN",
-    attn_only=False,
+    attn_only=True,
 )
+
 
 def get_device():
     #return 'cpu'
     if torch.cuda.is_available():
         return "cuda"
-    elif torch.backends.mps.is_available():
-        return "mps"
+    # elif torch.backends.mps.is_available():
+    #     return "mps"
     else:
         return "cpu"
     
@@ -170,7 +184,7 @@ def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv, v_vv):
     return x_bt
     
 
-def create_definitions(integers, reliable_tag, reliable_def,newconfig=True):
+def create_definitions(integers, reliable_tag, reliable_def,newconfig=True,seed=0):
 
     '''
     integers: list of integers to create definitions for
@@ -183,7 +197,7 @@ def create_definitions(integers, reliable_tag, reliable_def,newconfig=True):
 
     return size (N, 3), where N = len(integers)
     '''
-
+    seed_all(seed)
     def_idx = 2*DataParams.mod + Tokens.reliable_def if reliable_tag else 2*DataParams.mod + Tokens.unreliable_def
 
     # get the token indices of the variables
@@ -217,11 +231,10 @@ def create_definitions(integers, reliable_tag, reliable_def,newconfig=True):
 
     return def_tensor.long()
 
-def create_questions(integers, num_questions=6, bidir=True, result_var=False,newconfig=True):
+def create_questions(integers, bidir=True, result_var=False,newconfig=True):
 
     '''
     integers: list of integers to create questions for
-    num_questions: how many questions to create per integer
     bidir: whether to have variables on the left and the right of the LHS
     result_var: whether to make result a variable sometimes too
 
@@ -284,8 +297,7 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False,new
     return question_tensor.long()
 
 
-def create_data(int_by_set, prop_val=0.1, num_questions=6,newconfig=True):
-
+def create_data(int_by_set, newconfig=True):
     '''
     Create train and validation sets
     We create X1 and X2 as train sets consisting of [DtQ1, DfQ2] and [Dt3, Df4] respectively.
@@ -434,8 +446,12 @@ def check_save_model(model, args, cur_step):
              model_name = f"{args.saved_model_name}_step_{cur_step}.pt"
         else:
              model_name = f"oocl_{DataParams.mod}_step_{cur_step}.pt"
-       
-        model_path = os.path.join(args.model_path, model_name)
+    
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+        model_path = os.path.join(args.model_path, timestamp+'__'+model_name)
+        print(f'SAVING TO {model_path}')
         torch.save(model.state_dict(), model_path)
 
 def train_w_orig(model, train_sets, test_sets, orig_args, train_params, args):
@@ -562,11 +578,11 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', type=str, default=None, help='Model name')
     parser.add_argument('--wandb_name', type=str, default='oocl_run', help='What to record run in wandb as')
     parser.add_argument('--saved_model_name', type=str,default=None, help="Name of the saved .pt file")
-    parser.add_argument('--seed', type=int, default=None, help='set seed')
+    parser.add_argument('--seed', type=int, default=0, help='set seed')
     parser.add_argument('--save_steps', type=int, nargs="*", help="steps at which to save model")
-    
     args = parser.parse_args()
-
+    print(f'{args.save_steps=}')
+    seed_all(args.seed)
     model_path = args.model_path + args.model_name
 
     if args.seed:
@@ -591,7 +607,7 @@ if __name__ == '__main__':
     int_by_set['Df4'] = numbers[3*size:mod]
 
 
-        
+
 
     new_transformer_config = transformer_config
     new_transformer_config.update(dict(
@@ -600,9 +616,10 @@ if __name__ == '__main__':
     new_cfg = HookedTransformerConfig(**new_transformer_config)
     new_model = HookedTransformer(new_cfg)
     new_model.load_state_dict(torch.load(model_path))
+    new_model.to(get_device())
     # load wandb
 
-    wandb.login(key=os.getenv("WANDB_API_KEY"))
+    # wandb.login(key=os.getenv("WANDB_API_KEY"))
 
     dir_models = "models/transformers/"
     Path(dir_models).mkdir(exist_ok=True, parents=True)
@@ -611,17 +628,19 @@ if __name__ == '__main__':
 
     name = args.wandb_name if args.wandb_name else f"oocl_{DataParams.mod}"
 
-    wandb.init(
-        project="oocl",
-        entity=os.getenv("WANDB_ENTITY"),
-        name=name,
-        config={
-            **asdict(DataParams()),
-            **asdict(train_params),
-            **new_transformer_config,
-        }
-    )
-    print('Ints by set:\n')
+    # wandb.init(
+    #     project="misha-iml",
+    #     name=name,
+    #     config={
+    #         **asdict(DataParams()),
+    #         **asdict(train_params),
+    #         **new_transformer_config,
+    #     }
+    # )
+    print(f'{args.seed=}')
+    print(f'int_by_set')
+    print(int_by_set)
+    # print('Ints by set:\n')
     
     ints_by_set={}
     for k in int_by_set:
@@ -636,6 +655,17 @@ if __name__ == '__main__':
     
 
     train_sets, test_sets = create_data(int_by_set)
+    
+
+    data_name = f"data_oocl_{DataParams.mod}.pt"
+
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    data_name = os.path.join(args.model_path, timestamp+'__'+data_name)
+    print(f'SAVING TO {data_name}')
+    torch.save((train_sets, test_sets), data_name)
+
 
     orig_args = make_tbl_mask(mod=DataParams.mod, method='prod', frac_held_out=train_params.orig_held_out_frac)
 

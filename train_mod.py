@@ -12,7 +12,7 @@ from pathlib import Path
 import itertools
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
+import argparse
 
 @dataclass
 class DataParams:
@@ -84,7 +84,14 @@ default_transformer_config = dict(
 )
 
 
-default_transformer_config = dict(
+# d_mlp = 256
+# d_model = 1024
+# LN
+# d_head=128
+# n_heads=4
+# n_layers=1
+
+transformer_config = dict(
     d_vocab=512,
     n_layers=1,
     d_model=1024,
@@ -234,8 +241,7 @@ def train(model, train_loader, valid_loader, nsteps, lr, betas, max_grad_norm, w
                         dir_models, f"{model_name}_{epoch:010}.pt"))
             early_stop_valid_loss = kwargs.get("early_stop_valid_loss", None)
             if early_stop_valid_loss is not None and valid_loss < early_stop_valid_loss:
-                logging.info(f"Early stopping due to valid loss limit of {
-                             early_stop_valid_loss} at epoch {epoch}")
+                logging.info(f"Early stopping due to valid loss limit of {early_stop_valid_loss} at epoch {epoch}")
                 break
             model.train()
 
@@ -260,6 +266,31 @@ def evaluate(model, val_loader, device):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Perform OOCL tests')
+
+    parser.add_argument('--model_path', type=str,
+                        default='./models/transformers/', help='Path to model save dir')
+    parser.add_argument('--save_name', type=str,
+                        default=None, help='model save name')
+    parser.add_argument('--seed', type=int, default=None, help='set seed')
+    parser.add_argument('--project_name', type=str,
+                        default='luan_tests', help='wandb project name')
+
+    parser.add_argument('--n_layers', type=int, default=None,
+                        help='Number of layers in transformer')
+    parser.add_argument('--d_model', type=int,
+                        default=None, help='Model dimension')
+    parser.add_argument('--d_head', type=int, default=None,
+                        help='Head dimension')
+    parser.add_argument('--n_heads', type=int,
+                        default=None, help='Number of heads')
+    parser.add_argument('--d_mlp', type=int, default=None,
+                        help='MLP dimension')
+    parser.add_argument('--attn_only', type=int, default=None,
+                        help='Whether to use only attention')
+
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
     DEVICE = get_device()
     logging.info(f"using device: {DEVICE}")
@@ -267,10 +298,31 @@ if __name__ == "__main__":
 
     data_params = DataParams()
     tokens = Tokens()
-    transformer_config = default_transformer_config
+
     transformer_config.update(dict(
         d_vocab=2*data_params.mod + 4,  # include tokens for oocl later
     ))
+
+    if args.n_layers:
+        transformer_config.update(dict(n_layers=args.n_layers))
+
+    if args.d_model:
+        transformer_config.update(dict(d_model=args.d_model))
+
+    if args.d_head:
+        transformer_config.update(dict(d_head=args.d_head))
+
+    if args.n_heads:
+        transformer_config.update(dict(n_heads=args.n_heads))
+
+    if args.d_mlp:
+        transformer_config.update(dict(d_mlp=args.d_mlp))
+
+    if args.attn_only is not None:
+        if args.attn_only == 1:
+            transformer_config.update(dict(attn_only=True))
+        else:
+            transformer_config.update(dict(attn_only=False))
     train_params = TrainParams()
 
     # load wandb
@@ -293,8 +345,8 @@ if __name__ == "__main__":
             f"{valid_vv.sum().item()} validation examples."
         )
         model = HookedTransformer(cfg)
-        name = f"grokking_{data_params.operation}_{data_params.mod}_{
-            model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
+        model.to(get_device())
+        name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
         logging.info(f"project named: {name}")
         train_loader = make_data(
             train_params.batch_size, x_vv, y_vv, z_vv, train_vv)
@@ -323,8 +375,7 @@ if __name__ == "__main__":
             #  do not wandb.finish() on purpose
             raise KeyboardInterrupt
         ts_finish_training = time.time()
-        logging.info(f"training n_layers={model.cfg.n_layers} took {
-                     (ts_finish_training - ts_start_training)//60} minutes")
+        logging.info(f"training n_layers={model.cfg.n_layers} took {(ts_finish_training - ts_start_training)//60} minutes")
 
         from datetime import datetime
 
