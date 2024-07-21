@@ -4,3 +4,5 @@ wandb/
 .env
 models/transformers/
 *.pt
+oocl_step_models/
+*.ipynb
