@@ -30,13 +30,13 @@ class Tokens:
 class TrainParams:
     n_steps: int = int(1e8)
     batch_size: int = 2**7
-    lr: float = 3e-4
+    lr: float = 2e-4
     wd: float = 0.1
     betas: tuple = (0.9, 0.98)
     max_grad_norm: float = 1.0
     warm_up_steps: int = 1000
     save_every: int = 500000  # save every this many steps
-    early_stop_valid_loss: float = 0.005
+    early_stop_valid_loss: float = 0.00005
     n_steps_epoch: int = 100  # validate / log once every this many steps
 
 
@@ -73,7 +73,7 @@ default_transformer_config = dict(
 default_transformer_config = dict(
     d_vocab=512,
     n_layers=6,
-    d_model=1024,
+    d_model=1024 * 4,
     d_head=256,
     n_heads=4,
     d_mlp=512,
@@ -100,7 +100,7 @@ transformer_config = dict(
     d_mlp=256,
     n_ctx=5,
     act_fn="relu",  # gelu?
-    normalization_type="LN",
+    normalization_type='LN',
     attn_only=False,
 )
 
@@ -346,7 +346,7 @@ if __name__ == "__main__":
         )
         model = HookedTransformer(cfg)
         model.to(get_device())
-        name = f"grokking_{data_params.operation}_{data_params.mod}_{model.cfg.n_layers}_{round(frac_held_out, 2)}_attnonly_{model.cfg.attn_only}"
+        name = f"pretrained_{model.cfg.n_layers}L_dmodel={cfg.d_model}_attnonly={model.cfg.attn_only}"
         logging.info(f"project named: {name}")
         train_loader = make_data(
             train_params.batch_size, x_vv, y_vv, z_vv, train_vv)
@@ -363,6 +363,7 @@ if __name__ == "__main__":
                 **transformer_config,
             }
         )
+        print(f"{transformer_config=}")
         ts_start_training = time.time()
         try:
             train(
