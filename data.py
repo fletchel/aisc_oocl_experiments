@@ -35,6 +35,12 @@ class DataParams:
     mod: int = 120
     operation: str = "prod"
 
+@dataclass
+class DataArgs:
+    orig_held_out_frac: float = 0.01
+    batch_size: int = None
+    prop_orig: float = 0.25
+
 
 @dataclass
 class Tokens:
@@ -44,21 +50,6 @@ class Tokens:
     unreliable_def: int = 2
     padding: int = 3
 
-
-@dataclass
-class TrainParams:
-    n_steps: int = int(1e8)
-    batch_size: int = 128
-    lr: float = 0.0001
-    wd: float = 0.1
-    betas: tuple = (0.9, 0.98)
-    max_grad_norm: float = 1.0
-    num_epochs_X1: int = 1000
-    num_epochs_X2: int = 20000
-    prop_orig: float = 0.25
-    orig_held_out_frac: float = 0.01
-    swap_defs: bool = False  # whether to swap the order of the defs
-    val_questions: int = 9
 
 
 class OOCL_Dataset(Dataset):
@@ -165,7 +156,7 @@ def create_orig_data(batch_size, x_vv, y_vv, z_vv, m_vv, v_vv):
     return x_bt
 
 
-def create_definitions(integers, reliable_tag, reliable_def, newconfig=True, seed=0):
+def create_definitions(integers, reliable_tag, reliable_def, newconfig=True, seed=0, swap_defs=False):
     '''
     integers: list of integers to create definitions for
     reliable: bool indicating whether to use reliable/unreliable def
@@ -199,7 +190,7 @@ def create_definitions(integers, reliable_tag, reliable_def, newconfig=True, see
 
     def_tensor = torch.cat((def_idx_tensor, var_tensor, integer_tensor), dim=1)
 
-    if TrainParams.swap_defs:
+    if swap_defs:
         swap_var_tensor = var_tensor.clone()
         swap_integer_tensor = integer_tensor.clone()
 
@@ -287,7 +278,7 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False, ne
     return question_tensor.long()
 
 
-def create_datasets(int_by_set, prop_val=0.1, num_questions=6, newconfig=True):
+def create_datasets(int_by_set, prop_val=0.1, num_questions=6, newconfig=True, val_questions=9):
     '''
     Create train and validation sets
     We create X1 and X2 as train sets consisting of [DtQ1, DfQ2] and [Dt3, Df4] respectively.
@@ -346,7 +337,7 @@ def create_datasets(int_by_set, prop_val=0.1, num_questions=6, newconfig=True):
 
                     if var in cur_vars:
 
-                        if used_vars[var] == TrainParams.val_questions:
+                        if used_vars[var] == val_questions:
                             used = True
                             break
 
