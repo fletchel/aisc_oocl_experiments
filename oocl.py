@@ -191,10 +191,8 @@ def create_definitions(integers, reliable_tag, reliable_def,newconfig=True):
 
     N = len(integers)
 
-    if (newconfig):
-        var_indices = [i + DataParams.mod-1 for i in integers]
-    else:
-        var_indices = [i + DataParams.mod for i in integers]
+
+    var_indices = [i + DataParams.mod for i in integers]
 
     if not reliable_def:
         random.shuffle(integers)
@@ -258,17 +256,12 @@ def create_questions(integers, num_questions=6, bidir=True, result_var=False,new
             integer_tensor = torch.tensor(integers).view(N,)
 
             Z = integer_tensor*d_tensor % DataParams.mod
-            if (newconfig):
-                var_indices = [i + DataParams.mod-1 for i in integers]
-            else:
-                var_indices = [i + DataParams.mod for i in integers]
+            var_indices = [i + DataParams.mod for i in integers]
 
             var_tensor = torch.tensor(var_indices).view(N, 1)
 
-            if (newconfig):
-                equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
-            else:
-                equal_tensor = torch.full((N, 1), DataParams.mod, dtype=torch.int64)
+            equal_tensor = torch.full((N, 1), 2*DataParams.mod + Tokens.equal, dtype=torch.int64)
+
 
             result_tensor = torch.tensor(Z).view(N, 1)
             d_tensor = d_tensor.view(N, 1)
@@ -324,10 +317,7 @@ def create_data(int_by_set, prop_val=0.1, num_questions=6,newconfig=True):
             cur_questions_dataset = TensorDataset(cur_questions)
 
             mask = torch.zeros(cur_questions.size(0), dtype=torch.bool)
-            if newconfig:
-                cur_vars = [i + DataParams.mod-1 for i in int_by_set[dataset]]
-            else:
-                cur_vars = [i + DataParams.mod for i in int_by_set[dataset]]
+            cur_vars = [i + DataParams.mod for i in int_by_set[dataset]]
 
             used_vars = {i:0 for i in cur_vars}
             test_indices = []
